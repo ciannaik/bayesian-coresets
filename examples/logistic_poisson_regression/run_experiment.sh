@@ -2,7 +2,7 @@
 
 for dnm in "synth_lr" "phishing" "ds1"
 do
-    for alg in "US" "GIGA-OPT" "GIGA-REAL" "SVI" 
+    for alg in "US" "GIGA-OPT" "GIGA-REAL" "GIGA-REC" "GIGA-REC-MCMC" "SVI"
     do
         for ID in {1..3}
         do
@@ -10,5 +10,4 @@ do
 	done
     done
 done
-
 
