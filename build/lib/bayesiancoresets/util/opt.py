@@ -30,7 +30,7 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
 
 def an_opt(x0, grd, opt_itrs=1000, step_sched=lambda i : 1./(i+1)):
   x = x0.copy()
-  for i in range(4):
+  for i in range(2):
     g = grd(x)
     # upd = step_sched(i)*g
     upd = g

@@ -1,8 +1,9 @@
 #!/bin/bash
 
-for dnm in "synth_lr" "phishing" "ds1"
+for dnm in "ds1"
 do
-    for alg in "US" "GIGA-OPT" "GIGA-REAL" "GIGA-REC" "GIGA-REC-MCMC" "SVI"
+    for alg in "UNIF" "GIGA-OPT" "GIGA-REAL" "GIGA-REC-MCMC" "ANC" "SVI"
+#    for alg in "ANC"
     do
         for ID in {1..3}
         do

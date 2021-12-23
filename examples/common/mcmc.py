@@ -1,36 +1,37 @@
 import numpy as np
-import pystan
+import stan
 import os
 import pickle as pk
 import time
 import hashlib
 
 #Takes in the name of and code for a statistical model that allows stan to run MCMC, and returns cpp code that stan can use to perform MCMC on a coreset.  
-def load_modified_cpp_code(stan_folder, model_name, model_code):
-  code_hash = hashlib.sha1(model_code.encode('utf-8')).hexdigest()
-  cpp_filename = os.path.join(stan_folder, "weighted_" + model_name + "_" + code_hash + ".cpp")
-  if os.path.exists(cpp_filename):
-    f = open(cpp_filename,'r')
-    modified_code = f.read()
-    f.close()
-    return modified_code
-  else: 
-    if not os.path.exists(stan_folder):
-      os.mkdir(stan_folder)
+# def load_modified_cpp_code(stan_folder, model_name, model_code):
+#   code_hash = hashlib.sha1(model_code.encode('utf-8')).hexdigest()
+#   cpp_filename = os.path.join(stan_folder, "weighted_" + model_name + "_" + code_hash + ".cpp")
+#   cpp_filename = os.path.join(stan_folder, "poiss_weighted_coreset_version_2eb5fdf9460ca0b941e7240dfac57ef030aceee3.cpp")
+#   if os.path.exists(cpp_filename):
+#     f = open(cpp_filename,'r')
+#     modified_code = f.read()
+#     f.close()
+#     return modified_code
+#   else:
+#     if not os.path.exists(stan_folder):
+#       os.mkdir(stan_folder)
+#
+#     sm = pystan.StanModel(model_code=model_code)
+#     f = open(cpp_filename, "w")
+#     f.write("This line will create an error. Remove it once you have modified the code below to handle weighted coresets. See ReadMe for more information.\n")
+#     f.write(sm.model_cppcode)
+#     f.close()
+#     unweighted_cpp_filename = os.path.join(stan_folder, 'unweighted_' + model_name + "_" + code_hash + '.cpp')
+#     f = open(unweighted_cpp_filename, "w")
+#     f.write(sm.model_cppcode)
+#     f.close()
+#     raise EnvironmentError("No modified code to handle weighted data present - unable to use stan for MCMC sampling. Please modify the file "+str(cpp_filename)+" to handle weighted data. See the ReadMe for more information.")
 
-    sm = pystan.StanModel(model_code=model_code)
-    f = open(cpp_filename, "w")
-    f.write("This line will create an error. Remove it once you have modified the code below to handle weighted coresets. See ReadMe for more information.\n")
-    f.write(sm.model_cppcode)      
-    f.close()
-    unweighted_cpp_filename = os.path.join(stan_folder, 'unweighted_' + model_name + "_" + code_hash + '.cpp')
-    f = open(unweighted_cpp_filename, "w")
-    f.write(sm.model_cppcode) 
-    f.close()
-    raise EnvironmentError("No modified code to handle weighted data present - unable to use stan for MCMC sampling. Please modify the file "+str(cpp_filename)+" to handle weighted data. See the ReadMe for more information.")
 
-
-def build_model(stan_folder, model_name, model_code, verbose_compile):
+def build_model(stan_folder, model_name, model_code, sampler_data, seed):
   code_hash = hashlib.sha1(model_code.encode('utf-8')).hexdigest()
   model_filename = os.path.join(stan_folder, model_name + "_" + code_hash)
   if os.path.exists(model_filename):
@@ -43,29 +44,30 @@ def build_model(stan_folder, model_name, model_code, verbose_compile):
       os.mkdir(stan_folder)
     print('STAN: no cached model found; building')
     try:
-        stanc_ret = pystan.stanc(model_code=model_code)
-        stanc_ret['cppcode'] = load_modified_cpp_code(stan_folder, model_name, model_code)
-        sm = pystan.StanModel(stanc_ret=stanc_ret, verbose=verbose_compile)
+        sm = stan.build(model_code, data=sampler_data, random_seed=seed)
     except:
         print('Compiling failed. Did you make sure to modify the weighted_[model_name]_[code_hash].cpp file to handle weighted data?')
         raise
     
-    f = open(model_filename,'wb')
-    pk.dump(sm,f)
-    f.close()
+    # f = open(model_filename,'wb')
+    # pk.dump(sm,f)
+    # f.close()
   return sm
 
-def run(sampler_data, N_samples, model_name, model_code, seed, stan_folder = '../common/stan_cache/', chains=1, control={'adapt_delta':0.9, 'max_treedepth':15}, verbose=True, verbose_compile = False):
+def run(sampler_data, N_samples, model_name, model_code, seed, stan_folder = '../common/stan_cache/', chains=1, control={'adapt_delta':0.9, 'max_treedepth':15}, verbose=True, init = None):
     print('STAN: building/loading model ' + model_name)
-    sm = build_model(stan_folder, model_name, model_code, verbose_compile)
+    sm = build_model(stan_folder, model_name, model_code, sampler_data, seed)
 
     print('STAN: sampling ' + model_name)
     t0 = time.process_time()
     #call sampling with N_samples actual iterations, and some number of burn iterations
-    fit = sm.sampling(data=sampler_data, iter=N_samples*2, chains=chains, control=control, verbose=verbose, seed=seed)
-    samples = fit.extract()
+    if init is None:
+        fit = sm.sample(num_samples=N_samples, num_chains=chains, delta=0.9, max_depth=15)
+    else:
+        fit = sm.sample(num_samples=N_samples, num_chains=chains, init=init, delta=0.9, max_depth=15)
+
     t_sample = time.process_time() - t0
-    return samples, t_sample
+    return fit, t_sample
 
 
 # TODO test weighted CPP using randomly chosen integer weights

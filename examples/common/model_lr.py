@@ -13,14 +13,16 @@ def load_data(dnm):
   return X, Y, Z, None, Z.shape[1]
 
 def gen_synthetic(n):
-  mu = np.array([0, 0])
-  cov = np.eye(2)
-  th = np.array([3, 3])
-  X = np.random.multivariate_normal(mu, cov, n)
+  mu = np.array([0, 0, 0, 0, 0, 0])
+  cov = np.eye(6)
+  th = np.array([3, 3, -3, -3, 1, 1, 0])
+  X = np.ones((n,7))
+  X[:,:-1] = np.random.multivariate_normal(mu, cov, n)
   ps = 1.0/(1.0+np.exp(-(X*th).sum(axis=1)))
   y = (np.random.rand(n) <= ps).astype(int)
   y[y==0] = -1
-  return y[:, np.newaxis]*X, (y[:, np.newaxis]*X).mean(axis=0)
+  Z = y[:, np.newaxis]*X
+  return X, y, Z, None, Z.shape[1]
 
 def log_likelihood(z, th):
   z = np.atleast_2d(z)
@@ -95,12 +97,34 @@ def diag_hess_th_log_prior(th):
 def diag_hess_th_log_joint(z, th, wts):
   return diag_hess_th_log_prior(th) + (wts[:, np.newaxis, np.newaxis]*diag_hess_th_log_likelihood(z, th)).sum(axis=0)
 
+# stan_representation = """
+# data {
+#   int<lower=0> n; // number of observations
+#   int<lower=0> d; // number of predictors
+#   int<lower=0,upper=1> y[n]; // outputs
+#   matrix[n,d] x; // inputs
+# }
+# parameters {
+#   vector[d] theta; // auxiliary parameter
+# }
+# transformed parameters {
+#   vector[n] f;
+#   f = x*theta;
+# }
+# model {
+#   theta ~ normal(0, 1);
+#   y ~ bernoulli_logit(f);
+# }
+# """
+
+
 stan_representation = """
 data {
   int<lower=0> n; // number of observations
   int<lower=0> d; // number of predictors
   int<lower=0,upper=1> y[n]; // outputs
   matrix[n,d] x; // inputs
+  vector<lower=0>[n] w;  // weights
 }
 parameters {
   vector[d] theta; // auxiliary parameter
@@ -111,7 +135,9 @@ transformed parameters {
 }
 model {
   theta ~ normal(0, 1);
-  y ~ bernoulli_logit(f);
+  for(i in 1:n){
+    target +=  bernoulli_logit_lupmf(y[i] | f[i]) * w[i];
+  }
 }
 """
 

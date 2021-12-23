@@ -46,6 +46,12 @@ def run(arguments):
     
     if arguments.coreset_size_spacing == 'log':
         Ms = np.unique(np.logspace(0., np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
+        # Ms = np.unique(
+        #     np.logspace(np.log10(arguments.data_dim), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32)
+        # )
+        Ms = np.unique(
+            np.logspace(np.log10(10), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32)
+        )
     else:
         Ms = np.unique(np.linspace(1, arguments.coreset_size_max, arguments.coreset_num_sizes, dtype=np.int32))
 
@@ -71,6 +77,7 @@ def run(arguments):
     USig = sl.solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False).T # Sig = UU^T, U upper tri
     th = np.ones(arguments.data_dim)
     logdetSig = np.linalg.slogdet(Sig)[1]
+    logdetSig0 = np.linalg.slogdet(Sig0)[1]
     
     #######################################
     #######################################
@@ -89,8 +96,12 @@ def run(arguments):
     log_likelihood = lambda x, th : gaussian.log_likelihood(x, th, Siginv, logdetSig)
     
     print('Creating gradient log-likelihood function')
-    grad_log_likelihood = lambda x, th : gaussian.gradx_log_likelihood(x, th, Siginv)
-    
+    grad_log_likelihood = lambda x, th : gaussian.grad_x_log_likelihood(x, th, Siginv)
+
+    # create the log_joint function
+    print('Creating log-joint function')
+    log_joint = lambda x, th: gaussian.log_joint(x, th, wts, Siginv, logdetSig, mu0, Sig0inv, logdetSig0)
+
     print('Creating tuned projector for Hilbert coreset construction')
     #create the sampler for the "optimally-tuned" Hilbert coreset
     sampler_optimal = lambda n, w, pts : mup + np.random.randn(n, mup.shape[0]).dot(USigp.T)
@@ -111,7 +122,83 @@ def run(arguments):
         muw, USigw, _ = gaussian.weighted_post(mu0, Sig0inv, Siginv, pts, wts)
         return muw + np.random.randn(n, muw.shape[0]).dot(USigw.T)
     prj_bb = bc.BlackBoxProjector(sampler_w, arguments.proj_dim, log_likelihood, grad_log_likelihood)
-    
+
+    # Define projector with Laplace sampling from coreset posterior
+    def sampler_IS_Laplace(n, data, data_rec, wts, idcs, pts, temp, temp_rec):
+        # Sample from pi_w
+        if wts is None or pts is None or pts.shape[0] == 0:
+            wts = np.zeros(1)
+            pts = np.zeros((1, mu0.shape[0]))
+        muw, USigw, _ = gaussian.weighted_post(mu0, Sig0inv, Siginv, pts, wts)
+        return muw + np.random.randn(n, muw.shape[0]).dot(USigw.T), np.ones(n)
+
+        ess_max = 0
+        for ess_i in range(1):
+            theta = muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T)
+
+            ## Reweight
+
+            # Calculate IS weights eta
+            xw_target = data
+            ww_target = temp * np.ones(data.shape[0])
+            xw_prop = pts[wts > 0]
+            ww_prop = temp_rec * wts[wts > 0]
+
+            eta = np.exp(log_joint(xw_target, theta, ww_target) -
+                         log_joint(xw_prop, theta, ww_prop) - np.max(
+                log_joint(xw_target, theta, ww_target) -
+                log_joint(xw_prop, theta, ww_prop)))
+
+            # TODO: Add something here to catch inf/nan etas
+
+            ## Recenter
+
+            # Use the sample to estimate the proposal and target posterior means
+            mu_hat_prop = np.mean(theta, 0)
+            mu_hat_target_recentered_rescaled = np.dot(eta, theta) / np.sum(eta)
+
+            # Iteratively improve the mean:
+            theta_recentered_rescaled = theta
+            eta_recentered_rescaled = eta
+
+            # TODO: number of recentering steps currently hardcoded
+            if data_rec.shape[0] > 2 * data_rec.shape[1]:
+                for _ in range(20):
+                    # Use the posterior mean estimates to rescale and recenter the samples
+                    theta_recentered_rescaled = \
+                        np.sqrt((temp_rec * data_rec.shape[0]) / (temp * data.shape[0])) * (theta - mu_hat_prop) + \
+                        mu_hat_target_recentered_rescaled
+
+                    # Calculate the modified weights
+                    eta_recentered_rescaled = np.exp(log_joint(xw_target, theta_recentered_rescaled, ww_target) -
+                                                     log_joint(xw_prop, theta, ww_prop) - np.max(
+                        log_joint(xw_target, theta_recentered_rescaled, ww_target) -
+                        log_joint(xw_prop, theta, ww_prop)))
+
+                    # Update the posterior mean
+                    mu_hat_target_recentered_rescaled = \
+                        np.dot(eta_recentered_rescaled, theta_recentered_rescaled) / np.sum(eta_recentered_rescaled)
+
+            ess_new = sum(eta_recentered_rescaled) ** 2 / sum(eta_recentered_rescaled ** 2)
+
+            if ess_new > ess_max:
+                ess_max = ess_new
+
+                theta_out = theta_recentered_rescaled
+                eta_out = eta_recentered_rescaled / sum(eta_recentered_rescaled)
+
+            if ess_max > n / 2:
+                break
+
+        print('{} tries'.format(ess_i + 1))
+        print(sum(eta_out) ** 2 / sum(eta_out ** 2))
+        print('Un-rescaled ESS: {}'.format(sum(eta) ** 2 / sum(eta ** 2)))
+
+        return theta_out, eta_out / sum(eta_out)
+
+    prj_rec = bc.ImportanceSamplingProjector(sampler_IS_Laplace, arguments.proj_dim, log_likelihood,
+                                             grad_log_likelihood)
+
     print('Creating exact projectors')
     #TODO need to fix all the transposes in this...
     class GaussianProjector(bc.Projector):
@@ -150,19 +237,27 @@ def run(arguments):
     #create coreset construction objects
     sparsevi_exact = bc.SparseVICoreset(x, GaussianProjector(), opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
     sparsevi = bc.SparseVICoreset(x, prj_bb, opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
+    newton = bc.ApproxNewtonCoreset(x, prj_bb, opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
     giga_optimal = bc.HilbertCoreset(x, prj_optimal)
     giga_optimal_exact = bc.HilbertCoreset(x,prj_optimal_exact)
     giga_realistic = bc.HilbertCoreset(x,prj_realistic)
     giga_realistic_exact = bc.HilbertCoreset(x,prj_realistic_exact)
     unif = bc.UniformSamplingCoreset(x)
+    giga_recursive = bc.RecursiveHilbertCoreset(x, prj_rec, r_subsample_prob=0.5)
+    # giga_recursive_mcmc = bc.RecursiveHilbertCoresetMCMC(x, prj_rec_mcmc_rw, r_subsample_prob=0.5, dataX=X, dataY=Y)
+    giga_recursive_mcmc = giga_recursive
+
     
     algs = {'SVI-EXACT': sparsevi_exact,
-            'SVI': sparsevi, 
+            'SVI': sparsevi,
+            'ANC': newton,
+            'GIGA-REC': giga_recursive,
+            # 'GIGA-REC-MCMC': giga_recursive_mcmc,
             'GIGA-OPT': giga_optimal, 
             'GIGA-OPT-EXACT': giga_optimal_exact, 
             'GIGA-REAL': giga_realistic, 
             'GIGA-REAL-EXACT': giga_realistic_exact, 
-            'US': unif}
+            'UNIF': unif,}
     alg = algs[arguments.alg]
     
     print('Building coreset')
@@ -172,12 +267,21 @@ def run(arguments):
     t_build = 0
     for m in range(Ms.shape[0]):
       print('M = ' + str(Ms[m]) + ': coreset construction, '+ arguments.alg + ' ' + str(arguments.trial))
-      t0 = time.process_time()
-      itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m-1])
-      alg.build(itrs)
-      t_build += time.process_time()-t0
-      wts, pts, idcs = alg.get()
-    
+      # Recursive alg needs to be run fully each time
+      if alg == giga_recursive or alg == giga_recursive_mcmc or alg == giga_recursive:
+          t0 = time.process_time()
+          itrs = Ms[m]
+          alg.build(itrs)
+          t_build = time.process_time() - t0
+      else:
+          # this runs alg up to a level of M; on the next iteration, it will continue from where it left off
+          t0 = time.process_time()
+          itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m - 1])
+          alg.build(itrs)
+          t_build += time.process_time() - t0
+      # wts, pts, idcs = alg.get()
+      wts, pts, idcs = alg.get_neg_weights()
+
       #store weights/pts/runtime
       w.append(wts)
       p.append(pts)
@@ -198,7 +302,8 @@ def run(arguments):
     mu_errs = np.zeros(Ms.shape[0])
     Sig_errs = np.zeros(Ms.shape[0])
     for m in range(Ms.shape[0]):
-      csizes[m] = (w[m] > 0).sum()
+      # csizes[m] = (w[m] > 0).sum()
+      csizes[m] = (w[m] != 0).sum()
       muw[m, :], USigw, LSigwInv = gaussian.weighted_post(mu0, Sig0inv, Siginv, p[m], w[m])
       Sigw[m, :, :] = USigw.dot(USigw.T)
       rklw[m] = gaussian.KL(muw[m,:], Sigw[m,:,:], mup, SigpInv)
@@ -229,11 +334,11 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='1000', help='Dataset size/number of examples')
 parser.add_argument('--data_dim', type=int, default = '200', help="The dimension of the multivariate normal distribution to use for this experiment")
-parser.add_argument('--alg', type=str, default='SVI', choices = ['SVI', 'SVI-EXACT', 'GIGA-OPT', 'GIGA-OPT-EXACT', 'GIGA-REAL', 'GIGA-REAL-EXACT', 'US'], help="The name of the coreset construction algorithm to use")
+parser.add_argument('--alg', type=str, default='ANC', choices = ['SVI', 'SVI-EXACT', 'ANC', 'GIGA-OPT', 'GIGA-OPT-EXACT', 'GIGA-REAL', 'GIGA-REAL-EXACT', 'GIGA-REC', 'GIGA-REC-MCMC', 'UNIF'], help="The name of the coreset construction algorithm to use")
 parser.add_argument("--proj_dim", type=int, default=100, help="The number of samples taken when discretizing log likelihoods for these experiments")
 
 parser.add_argument('--coreset_size_max', type=int, default=200, help="The maximum coreset size to evaluate")
-parser.add_argument('--coreset_num_sizes', type=int, default=7, help="The number of coreset sizes to evaluate")
+parser.add_argument('--coreset_num_sizes', type=int, default=12, help="The number of coreset sizes to evaluate")
 parser.add_argument('--coreset_size_spacing', type=str, choices=['log', 'linear'], default='log', help="The spacing of coreset sizes to test")
 
 parser.add_argument('--opt_itrs', type=int, default = 100, help="Number of optimization iterations (for methods that use iterative weight refinement)")
@@ -262,5 +367,6 @@ plot_subparser.add_argument('--groupby', type=str, help = 'The command line argu
 
 arguments = parser.parse_args()
 arguments.func(arguments)
+# run(arguments)
 
 

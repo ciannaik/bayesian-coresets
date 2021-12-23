@@ -9,6 +9,17 @@ def log_likelihood(x, th, Siginv, logdetSig):
   xSiginvth = x.dot(Siginv.dot(th.T))
   return -x.shape[1]/2*np.log(2*np.pi) - 1./2.*logdetSig - 1./2.*(xSiginvx[:, np.newaxis] + thSiginvth - 2*xSiginvth)
 
+def log_prior(th, mu0, Sig0inv, logdetSig0):
+  th = np.atleast_2d(th)
+  mu0 = np.atleast_2d(mu0)
+  thSig0invth = (th*(th.dot(Sig0inv))).sum(axis=1)
+  mu0Sig0invmu0 = (mu0*(mu0.dot(Sig0inv))).sum(axis=1)
+  thSig0invmu0 = th.dot(Sig0inv.dot(mu0.T))
+  return -th.shape[1]/2*np.log(2*np.pi) - 1./2.*logdetSig0 - 1./2.*(thSig0invth[:, np.newaxis] + mu0Sig0invmu0 - 2*thSig0invmu0)
+
+def log_joint(x, th, wts, Siginv, logdetSig, mu0, Sig0inv, logdetSig0):
+    return (wts[:, np.newaxis]*log_likelihood(x, th, Siginv, logdetSig)).sum(axis=0) + log_prior(th, mu0, Sig0inv, logdetSig0)
+
 def grad_x_log_likelihood(x, th, Siginv):
   x = np.atleast_2d(x)
   th = np.atleast_2d(th)

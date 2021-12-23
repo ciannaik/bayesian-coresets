@@ -14,7 +14,7 @@ def load_data(dnm):
   Z = np.hstack((X, data['y'][:, np.newaxis]))
   Zt = np.hstack((Xt, data['yt'][:, np.newaxis]))
   data.close()
-  return X[:, :-1], Y, Z, Zt, Z.shape[1]-1
+  return X, Y, Z, Zt, Z.shape[1]-1
 
 def gen_synthetic(n):
   X = np.random.randn(n)
@@ -92,12 +92,34 @@ def hess_th_log_joint(z, th, wts):
   return hess_th_log_prior(th) + (wts[:, np.newaxis, np.newaxis, np.newaxis]*hess_th_log_likelihood(z, th)).sum(axis=0)
   
 #this line follows the format "model title, model code"  
+# stan_representation = """
+# data {
+#   int<lower=0> n; // number of observations
+#   int<lower=0> d; // number of predictors
+#   int<lower=0> y[n]; // outputs
+#   matrix[n,d] x; // inputs
+# }
+# parameters {
+#   vector[d] theta; // auxiliary parameter
+# }
+# transformed parameters {
+#   vector[n] f;
+#   f = -log_inv_logit(-(x*theta));
+# }
+# model {
+#   theta ~ normal(0, 1);
+#   y ~ poisson(f);
+# }
+# """
+
+
 stan_representation = """
 data {
   int<lower=0> n; // number of observations
   int<lower=0> d; // number of predictors
   int<lower=0> y[n]; // outputs
   matrix[n,d] x; // inputs
+  vector<lower=0>[n] w;  // weights
 }
 parameters {
   vector[d] theta; // auxiliary parameter
@@ -108,7 +130,8 @@ transformed parameters {
 }
 model {
   theta ~ normal(0, 1);
-  y ~ poisson(f);
+  for(i in 1:n){
+      target +=  poisson_lpmf(y[i] | f[i]) * w[i];
+  }
 }
 """
-

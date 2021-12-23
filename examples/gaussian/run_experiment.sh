@@ -1,8 +1,9 @@
 #!/bin/bash
 
 
-for alg in "US" "GIGA-REAL" "GIGA-REAL-EXACT" "GIGA-OPT" "GIGA-OPT-EXACT" "SVI-EXACT" "SVI"
-do 
+#for alg in "UNIF" "GIGA-REC" "GIGA-REAL" "GIGA-REAL-EXACT" "GIGA-OPT" "GIGA-OPT-EXACT" "SVI-EXACT" "SVI"
+for alg in "UNIF" "GIGA-REAL" "GIGA-OPT" "SVI" "ANC"
+do
     for ID in {1..3}
     do
 

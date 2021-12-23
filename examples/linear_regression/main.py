@@ -212,7 +212,7 @@ def run(arguments):
             'GIGA-OPT-EXACT': giga_optimal_exact, 
             'GIGA-REAL': giga_realistic, 
             'GIGA-REAL-EXACT': giga_realistic_exact, 
-            'US': unif}
+            'UNIF': unif}
     alg = algs[arguments.alg]
     
     print('Building coreset')
@@ -278,7 +278,7 @@ plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='10000', help='Dataset subsample to use')
-parser.add_argument('--alg', type=str, default='SVI', choices = ['SVI', 'SVI-EXACT', 'GIGA-OPT', 'GIGA-OPT-EXACT', 'GIGA-REAL', 'GIGA-REAL-EXACT', 'US'], help="The name of the coreset construction algorithm to use")
+parser.add_argument('--alg', type=str, default='SVI', choices = ['SVI', 'SVI-EXACT', 'GIGA-OPT', 'GIGA-OPT-EXACT', 'GIGA-REAL', 'GIGA-REAL-EXACT', 'UNIF'], help="The name of the coreset construction algorithm to use")
 parser.add_argument("--proj_dim", type=int, default=100, help="The number of samples taken when discretizing log likelihoods for these experiments")
 
 parser.add_argument('--coreset_size_max', type=int, default=300, help="The maximum coreset size to evaluate")
