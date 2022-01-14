@@ -8,6 +8,9 @@ class Projector(object):
     def update(self, wts, pts):
         raise NotImplementedError
 
+    def mv(self):
+        raise NotImplementedError
+
 class BlackBoxProjector(Projector):
     def __init__(self, sampler, projection_dimension, loglikelihood, grad_loglikelihood = None):
         self.projection_dimension = projection_dimension
@@ -36,8 +39,11 @@ class BlackBoxProjector(Projector):
             else:
                 return lls
 
+    def mv(self):
+        return self.muw, self.Lsigw
+
     def update(self, wts, pts):
-        self.samples = self.sampler(self.projection_dimension, wts, pts)
+        self.samples, self.muw, self.Lsigw = self.sampler(self.projection_dimension, wts, pts)
 
 class ImportanceSamplingProjector(Projector):
     def __init__(self, sampler, projection_dimension, loglikelihood, grad_loglikelihood = None):

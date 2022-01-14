@@ -80,7 +80,7 @@ def run(arguments):
         Ms = np.unique(
             np.logspace(0., np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
         # Ms = np.unique(
-        #     np.logspace(np.log10(100.), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
+        #     np.logspace(np.log10(50.), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
     else:
         Ms = np.unique(np.linspace(1, arguments.coreset_size_max, arguments.coreset_num_sizes, dtype=np.int32))
 
@@ -487,11 +487,11 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
+parser.add_argument('--model', type=str, default="poiss", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="synth_lr_large",
+parser.add_argument('--dataset', type=str, default="synth_poiss_large",
                     help="The name of the dataset")  # examples: synth_lr, phishing, ds1, synth_poiss, biketrips, airportdelays, synth_poiss_large, biketrips_large, airportdelays_large
-parser.add_argument('--alg', type=str, default='ANC',
+parser.add_argument('--alg', type=str, default='GIGA-OPT',
                     choices=['SVI', 'ANC', 'GIGA-REC', 'GIGA-REC-MCMC', 'GIGA-REC-NR', 'GIGA-REC-MCMC-NR', 'GIGA-OPT', 'GIGA-REAL', 'UNIF'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--mcmc_samples_full", type=int, default=1000,
@@ -501,7 +501,7 @@ parser.add_argument("--mcmc_samples_coreset", type=int, default=1000,
 parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods for these experiments")
 
-parser.add_argument('--coreset_size_max', type=int, default=499, help="The maximum coreset size to evaluate")
+parser.add_argument('--coreset_size_max', type=int, default=4999, help="The maximum coreset size to evaluate")
 parser.add_argument('--coreset_num_sizes', type=int, default=12, help="The number of coreset sizes to evaluate")
 parser.add_argument('--coreset_size_spacing', type=str, choices=['log', 'linear'], default='log',
                     help="The spacing of coreset sizes to test")
@@ -510,7 +510,7 @@ parser.add_argument('--opt_itrs', type=str, default=100,
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=16,
+parser.add_argument('--trial', type=int, default=15,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
@@ -540,6 +540,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 
