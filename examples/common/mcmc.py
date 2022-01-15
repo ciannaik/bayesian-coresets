@@ -4,6 +4,7 @@ import os
 import pickle as pk
 import time
 import hashlib
+import logging
 
 #Takes in the name of and code for a statistical model that allows stan to run MCMC, and returns cpp code that stan can use to perform MCMC on a coreset.  
 # def load_modified_cpp_code(stan_folder, model_name, model_code):
@@ -32,6 +33,11 @@ import hashlib
 
 
 def build_model(stan_folder, model_name, model_code, sampler_data, seed):
+  # suppress the large amount of stan output and newlines
+  logging.getLogger('httpstan').setLevel('WARNING')
+  logging.getLogger('aiohttp').setLevel('WARNING')
+  logging.getLogger('asyncio').setLevel('WARNING')
+
   code_hash = hashlib.sha1(model_code.encode('utf-8')).hexdigest()
   model_filename = os.path.join(stan_folder, model_name + "_" + code_hash)
   if os.path.exists(model_filename):
@@ -55,6 +61,11 @@ def build_model(stan_folder, model_name, model_code, sampler_data, seed):
   return sm
 
 def run(sampler_data, N_samples, model_name, model_code, seed, stan_folder = '../common/stan_cache/', chains=1, control={'adapt_delta':0.9, 'max_treedepth':15}, verbose=True, init = None):
+    # suppress the large amount of stan output and newlines
+    logging.getLogger('httpstan').setLevel('WARNING')
+    logging.getLogger('aiohttp').setLevel('WARNING')
+    logging.getLogger('asyncio').setLevel('WARNING')
+
     print('STAN: building/loading model ' + model_name)
     sm = build_model(stan_folder, model_name, model_code, sampler_data, seed)
 

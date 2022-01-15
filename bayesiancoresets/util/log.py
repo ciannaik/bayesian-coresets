@@ -10,7 +10,7 @@ def set_verbosity(verb):
 #  logging.getLogger().handlers[0].repeat_flag = repeat
 
 #TODO: add a repeating handler for a log file, set default repeat to console = False, default repeat to log = True
-def add_handler(log, repeat_flag, HandlerClass=logging.StreamHandler, handler_inits={'stream':sys.stderr}, format_string = '%(levelname)s - %(id)s.%(funcName)s(): %(message)s'):
+def add_handler(log, repeat_flag, HandlerClass=logging.StreamHandler, handler_inits={'stream':sys.stderr}, format_string = '%(levelname)s - %(name)s.%(funcName)s(): %(message)s'):
   class CustomHandler(HandlerClass):
     pass
     #def __init__(self, *args, **kwargs):
