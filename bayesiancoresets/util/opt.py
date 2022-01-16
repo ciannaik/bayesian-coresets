@@ -41,6 +41,10 @@ def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i
     a=1.0
     k=0.9
     fail = 0
+
+    while np.any(x+a*g < 0):
+        a /= 1.5
+
     for j in range(10):
       test = np.dot(grd(x+a*g),g)/np.dot(grd(x),g)
       # print("test = {}".format(test))

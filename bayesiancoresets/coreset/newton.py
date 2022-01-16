@@ -50,9 +50,7 @@ class QuasiNewtonCoreset(Coreset):
         else:
             corevecs = np.zeros((0, vecs.shape[1]))
 
-        muw, Lsigw = self.projector.mv()
-
-        return vecs, sum_scaling, sub_idcs, corevecs, muw, Lsigw
+        return vecs, sum_scaling, sub_idcs, corevecs
 
     def _select(self, size):
         for i in range(size):
@@ -70,13 +68,8 @@ class QuasiNewtonCoreset(Coreset):
         
         def search_direction(w, alpha=0.1):
             # vecs_sum, sum_scaling, sub_idcs, corevecs, muw, Lsigw = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
-            vecs, sum_scaling, sub_idcs, corevecs, muw, Lsigw = self._get_projection(self.n_subsample_opt, w, self.pts,
+            vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
                                                                                      return_sum=False)
-            # Calculate KL for current weights
-            Sigw = Lsigw.T.dot(Lsigw)
-            KLw = self._error(muw, Sigw)
-            print("Current KL: {}".format(KLw))
-
             # resid = sum_scaling*vecs_sum - w.dot(corevecs)
             resid = sum_scaling * vecs.sum(axis=0) - w.dot(corevecs)
 
@@ -85,19 +78,22 @@ class QuasiNewtonCoreset(Coreset):
             # add regularization term to hessian
             np.fill_diagonal(corevecs_cov, corevecs_cov.diagonal() + alpha)
             # np.fill_diagonal(corevecs_cov, (1+alpha)*corevecs_cov.diagonal())
-            print("Regularized determinant: {}".format(np.linalg.det(corevecs_cov)))
+            print("Quasi-Hessian condition number: {}".format(np.linalg.cond(corevecs_cov)))
 
             # add regularization term to gradient
             # grd_unscaled = (corevecs.dot(resid) / corevecs.shape[1]) - alpha * (
             #             w - self.data.shape[0] / self.pts.shape[0])
             grd_unscaled = (corevecs.dot(resid) / corevecs.shape[1])
+
+            print("Unscaled gradient norm: {}".format(np.sqrt(((grd_unscaled)**2).sum())))
+
             # output gradient of weights at idcs
             search_direction = np.linalg.solve(corevecs_cov, grd_unscaled)
             return search_direction
 
         def grd(x, alpha=0.01):
             # vecs_sum, sum_scaling, sub_idcs, corevecs, muw, Lsigw = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
-            vecs, sum_scaling, sub_idcs, corevecs, _, _ = self._get_projection(self.n_subsample_opt, x, self.pts,
+            vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, x, self.pts,
                                                                                return_sum=False)
 
             # resid = sum_scaling*vecs_sum - w.dot(corevecs)
