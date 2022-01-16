@@ -62,10 +62,7 @@ def run(arguments):
     import model_lr_heavy_tailed as model
 
     # set the prior hyperparams
-    mu0 = 0
     sig0 = 2
-
-    #TODO change the model to have mu0 and sig0 inputs -- Stan code is updated to have it, but the log_joint needs it too
 
     # set the synthetic data params (if we're using synthetic data)
     N_synth = 100
@@ -99,10 +96,10 @@ def run(arguments):
         # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
         if pts.shape[0] > 0:
             sampler_data = {'x': pts, 'y': np.ones(pts.shape[0], dtype=np.int64), 'w': wts,
-                            'd': pts.shape[1], 'n': pts.shape[0], 'mu0' : mu0, 'sig0' : sig0}
+                            'd': pts.shape[1], 'n': pts.shape[0], 'sig0' : sig0}
         else:
             sampler_data = {'x': np.zeros((1,Z.shape[1])), 'y': np.ones(1,dtype=np.int64), 'w': np.zeros(1),
-                            'd': Z.shape[1], 'n': 1, 'mu0' : mu0, 'sig0' : sig0}
+                            'd': Z.shape[1], 'n': 1, 'sig0' : sig0}
         samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
                                                             model.stan_code, arguments.trial)
 
@@ -124,10 +121,10 @@ def run(arguments):
         print('Cache exists, loading')
         tmp__ = np.load(mcmc_cache_filename)
         full_samples = tmp__['samples']
-        t_full_mcmc_per_itr = tmp__['t']
+        t_full_mcmc_per_itr = float(tmp__['t'])
     else:
         print('Cache doesn\'t exist, running MCMC')
-        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.mcmc_samples_full, np.ones(Z.shape[0]), Z, get_timing=True)
+        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
         if not os.path.exists('mcmc_cache'):
             os.mkdir('mcmc_cache')
         np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
@@ -148,10 +145,10 @@ def run(arguments):
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched))
-    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]))[0],
-				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:],
+    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
+				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
                                     np.zeros(Z.shape[1]),
-				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:,:])
+				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
 
     algs = {'SVI' : sparsevi,
             'ANC' : newton,
@@ -174,9 +171,9 @@ def run(arguments):
     if callable(__get):
         wts, pts, idcs = alg.get()
         # Use MCMC on the coreset, measure time taken
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.mcmc_samples_coreset, wts, pts, get_timing=True)
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
     else:
-        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.mcmc_samples_coreset, get_timing=True)
+        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
 
 
     print('Evaluation ' + log_suffix)
@@ -197,10 +194,10 @@ def run(arguments):
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute stein discrepancies
     # note: we evaluate the grad log p under the full posterior for both sample sets
-    scores_approx = model.grad_th_log_joint(Z, samples_approx, np.ones(Z.shape[0]))
-    scores_full = model.grad_th_log_joint(Z, samples_full, np.ones(Z.shape[0]))
-    gauss_stein = gaussian_stein_discrepancy(samples_approx, samples_full, scores_approx, scores_full)
-    imq_stein = imq_stein_discrepancy(samples_approx, samples_full, scores_approx, scores_full)
+    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
+    scores_full = model.grad_th_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig0)
+    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
+    imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
 
 
     print('Saving ' + log_suffix)
@@ -230,12 +227,10 @@ parser.add_argument('--dataset', type=str, default="synth_lr_cauchy",
 parser.add_argument('--alg', type=str, default='GIGA',
                     choices=['SVI', 'ANC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--mcmc_samples_full", type=int, default=1000,
-                    help="number of MCMC samples to take for inference on the full dataset (also take this many warmup steps before sampling)")
-parser.add_argument("--mcmc_samples_coreset", type=int, default=1000,
-                    help="number of MCMC samples to take for inference on the coreset (also take this many warmup steps before sampling)")
+parser.add_argument("--samples_inference", type=int, default=1000,
+                    help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=500,
-                    help="The number of samples taken when discretizing log likelihoods for these experiments")
+                    help="The number of samples taken when discretizing log likelihoods")
 parser.add_argument('--coreset_size', type=int, default=20, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for methods that use iterative weight refinement)")

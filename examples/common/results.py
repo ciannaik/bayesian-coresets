@@ -47,12 +47,12 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
       os.mkdir(results_folder)
 
     #add the kwargs to the dict
-    for kw, arr in kwargs.items():
-        argd[kw] = arr
+    for kw, val in kwargs.items():
+        argd[kw] = [val]
 
     #save the df
     df = pd.DataFrame(argd)
-    df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
+    df.to_csv(os.path.join(results_folder, arg_hash+'.csv')) #, index=False)
 
     #append to the manifest
     with open(os.path.join(results_folder, log_file), 'a') as f:

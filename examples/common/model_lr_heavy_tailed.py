@@ -33,15 +33,14 @@ def log_likelihood(z, th):
   m[np.logical_not(idcs)] = -m[np.logical_not(idcs)]
   return m
 
-def log_prior(th):
+def log_prior(th, sig0):
   th = np.atleast_2d(th)
-  sigma = np.repeat(2, th.shape[1])
-  sigma = np.atleast_2d(sigma)
+  sigma = np.atleast_2d(np.repeat(sig0, th.shape[1]))
   ll = -np.log(np.pi*(sigma + th**2/sigma))
   return ll.sum(axis=1)
 
-def log_joint(z, th, wts):
-    return (wts[:, np.newaxis]*log_likelihood(z, th)).sum(axis=0) + log_prior(th)
+def log_joint(z, th, wts, sig0):
+    return (wts[:, np.newaxis]*log_likelihood(z, th)).sum(axis=0) + log_prior(th, sig0)
 
 def grad_th_log_likelihood(z, th):
   z = np.atleast_2d(z)
@@ -61,14 +60,13 @@ def grad_z_log_likelihood(z, th):
   m[np.logical_not(idcs)] = 1.
   return m[:, :, np.newaxis]*th[np.newaxis, :, :]
 
-def grad_th_log_prior(th):
+def grad_th_log_prior(th, sig0):
   th = np.atleast_2d(th)
-  sigma = np.repeat(2, th.shape[1])
-  sigma = np.atleast_2d(sigma)
+  sigma = np.atleast_2d(np.repeat(sig0, th.shape[1]))
   return -2*th/(sigma**2 + th**2)
 
-def grad_th_log_joint(z, th, wts):
-  return grad_th_log_prior(th) + (wts[:, np.newaxis, np.newaxis]*grad_th_log_likelihood(z, th)).sum(axis=0)
+def grad_th_log_joint(z, th, wts, sig0):
+  return grad_th_log_prior(th, sig0) + (wts[:, np.newaxis, np.newaxis]*grad_th_log_likelihood(z, th)).sum(axis=0)
 
 def hess_th_log_likelihood(z, th):
   z = np.atleast_2d(z)
@@ -79,16 +77,15 @@ def hess_th_log_likelihood(z, th):
   m[np.logical_not(idcs)] = 0.
   return -m[:, :, np.newaxis, np.newaxis]*z[:, np.newaxis, :, np.newaxis]*z[:, np.newaxis, np.newaxis, :]
 
-def hess_th_log_prior(th):
+def hess_th_log_prior(th, sig0):
   th = np.atleast_2d(th)
-  sigma = np.repeat(2, th.shape[1])
-  sigma = np.atleast_2d(sigma)
+  sigma = np.atleast_2d(np.repeat(sig0, th.shape[1]))
   h = -2 * (sigma ** 2 - th ** 2) / ((sigma ** 2 + th ** 2) ** 2)
   h = np.diag(h[0,:])
   return np.tile(h, (th.shape[0], 1, 1))
 
-def hess_th_log_joint(z, th, wts):
-  return hess_th_log_prior(th) + (wts[:, np.newaxis, np.newaxis, np.newaxis]*hess_th_log_likelihood(z, th)).sum(axis=0)
+def hess_th_log_joint(z, th, wts, sig0):
+  return hess_th_log_prior(th, sig0) + (wts[:, np.newaxis, np.newaxis, np.newaxis]*hess_th_log_likelihood(z, th)).sum(axis=0)
 
 def diag_hess_th_log_likelihood(z, th):
   z = np.atleast_2d(z)
@@ -99,36 +96,15 @@ def diag_hess_th_log_likelihood(z, th):
   m[np.logical_not(idcs)] = 0.
   return -m[:, :, np.newaxis]*z[:, np.newaxis, :]**2
 
-def diag_hess_th_log_prior(th):
+def diag_hess_th_log_prior(th, sig0):
   th = np.atleast_2d(th)
-  sigma = np.repeat(2, th.shape[1])
-  sigma = np.atleast_2d(sigma)
+  sigma = np.atleast_2d(np.repeat(sig0, th.shape[1]))
   h = -2 * (sigma ** 2 - th ** 2) / (sigma ** 2 + th ** 2) ** 2
   dh = h[0, :]
   return np.tile(dh, (th.shape[0], 1))
 
-def diag_hess_th_log_joint(z, th, wts):
-  return diag_hess_th_log_prior(th) + (wts[:, np.newaxis, np.newaxis]*diag_hess_th_log_likelihood(z, th)).sum(axis=0)
-
-# stan_representation = """
-# data {
-#   int<lower=0> n; // number of observations
-#   int<lower=0> d; // number of predictors
-#   int<lower=0,upper=1> y[n]; // outputs
-#   matrix[n,d] x; // inputs
-# }
-# parameters {
-#   vector[d] theta; // auxiliary parameter
-# }
-# transformed parameters {
-#   vector[n] f;
-#   f = x*theta;
-# }
-# model {
-#   theta ~ normal(0, 1);
-#   y ~ bernoulli_logit(f);
-# }
-# """
+def diag_hess_th_log_joint(z, th, wts, sig0):
+  return diag_hess_th_log_prior(th, sig0) + (wts[:, np.newaxis, np.newaxis]*diag_hess_th_log_likelihood(z, th)).sum(axis=0)
 
 
 stan_code = """
@@ -138,7 +114,6 @@ data {
   int<lower=0,upper=1> y[n]; // outputs
   matrix[n,d] x; // inputs
   vector<lower=0>[n] w;  // weights
-  real mu0; // prior mean
   real sig0; // prior scale
 }
 parameters {
@@ -146,34 +121,10 @@ parameters {
 }
 model {
   for(i in 1:d){
-    theta[i] ~ cauchy(mu0, sig0);
+    theta[i] ~ cauchy(0, sig0);
   }
   for(i in 1:n){
     target +=  bernoulli_logit_lupmf(y[i] | x[i]*theta) * w[i];
   }
 }
 """
-
-# stan_representation = """
-# data {
-#   int<lower=0> n; // number of observations
-#   int<lower=0> d; // number of predictors
-#   int<lower=0,upper=1> y[n]; // outputs
-#   matrix[n,d] x; // inputs
-#   vector<lower=0>[n] w;  // weights
-# }
-# parameters {
-#   vector[d] theta; // auxiliary parameter
-# }
-# transformed parameters {
-#   vector[n] f;
-#   f = x*theta;
-# }
-# model {
-#   theta ~ normal(0, 2);
-#   for(i in 1:n){
-#     target +=  bernoulli_logit_lupmf(y[i] | f[i]) * w[i];
-#   }
-# }
-# """
-

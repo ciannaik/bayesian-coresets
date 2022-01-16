@@ -25,6 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import numpy as np
+
+
 def gaussian_stein_discrepancy(x, y, scores_x, scores_y, sigma=1):
     """Compute the Gaussian Stein discrepancy between x and y
     Parameters
@@ -46,7 +49,7 @@ def gaussian_stein_discrepancy(x, y, scores_x, scores_y, sigma=1):
     _, p = x.shape
     d = x[:, None, :] - y[None, :, :]
     dists = (d ** 2).sum(axis=-1)
-    k = torch.exp(-dists / sigma / 2)
+    k = np.exp(-dists / sigma / 2)
     scalars = scores_x.dot(scores_y.T)
     scores_diffs = scores_x[:, None, :] - scores_y[None, :, :]
     diffs = (d * scores_diffs).sum(axis=-1)
