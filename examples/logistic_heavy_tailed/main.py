@@ -72,6 +72,7 @@ def run(arguments):
     ############# Load Dataset  ###########
     #######################################
     #######################################
+
     print('Loading/creating dataset ' + arguments.dataset)
     if arguments.dataset == 'synth_lr_cauchy':
         X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
@@ -96,10 +97,11 @@ def run(arguments):
                             'd': X.shape[1], 'n': 1, 'mu0' : mu0, 'sig0' : sig0}
         samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
                                                             model.stan_code, arguments.trial)
+
         if get_timing:
-            return samples, t_mcmc, t_mcmc_per_itr
+            return samples['theta'].T, t_mcmc, t_mcmc_per_itr
         else:
-            return samples
+            return samples['theta'].T
 
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
                                                 model.grad_z_log_likelihood)
@@ -137,17 +139,16 @@ def run(arguments):
     unif = bc.UniformSamplingCoreset(Z)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     giga = bc.HilbertCoreset(Z, projector)
-    newton = bc.ApproxNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
-                                    step_sched=eval(arguments.step_sched),
-                                    posterior_mean=mup,posterior_Lsiginv=LSigpInv)
-    laplace = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]))[0],
+    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
+                                    step_sched=eval(arguments.step_sched))
+    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]))[0],
 				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:], 
                                     np.zeros(Z.shape[1]), 
 				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:,:])
 
     algs = {'SVI' : sparsevi,
             'ANC' : newton,
-            'LAP' : laplace,
+            'LAP' : lapl,
             'GIGA': giga,
             'UNIF': unif}
     alg = algs[arguments.alg]
