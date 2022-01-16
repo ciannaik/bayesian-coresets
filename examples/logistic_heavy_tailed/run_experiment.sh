@@ -2,8 +2,7 @@
 
 for dnm in "synth_lr_cauchy"
 do
-    for alg in "UNIF" "GIGA-OPT" "GIGA-REAL" "ANC"
-#    for alg in "ANC"
+    for alg in "UNIF" "GIGA" "ANC"
     do
         for ID in 15
         do
