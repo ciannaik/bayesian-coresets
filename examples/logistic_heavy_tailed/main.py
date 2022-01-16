@@ -12,6 +12,7 @@ from pstats import SortKey
 # make it so we can import models/etc from parent folder
 sys.path.insert(1, os.path.join(sys.path[0], '../common'))
 import mcmc
+import laplace
 import results
 import plotting
 from model_gaussian import KL
@@ -124,6 +125,7 @@ def run(arguments):
             os.mkdir('mcmc_cache')
         np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
+
     #######################################
     #######################################
     ## Step 4: Construct Coreset
@@ -132,27 +134,32 @@ def run(arguments):
 
     print('Creating coreset construction objects')
     # create coreset construction objects
+    unif = bc.UniformSamplingCoreset(Z)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     giga = bc.HilbertCoreset(Z, projector)
     newton = bc.ApproxNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched),
                                     posterior_mean=mup,posterior_Lsiginv=LSigpInv)
-    unif = bc.UniformSamplingCoreset(Z)
-    algs = {'SVI': sparsevi,
-            'ANC': newton,
+    laplace = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]))[0],
+				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:], 
+                                    np.zeros(Z.shape[1]), 
+				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:,:])
+
+    algs = {'SVI' : sparsevi,
+            'ANC' : newton,
             'LAP' : laplace,
-            'GIGA': giga_realistic,
+            'GIGA': giga,
             'UNIF': unif}
     alg = algs[arguments.alg]
 
-    cputs = np.zeros(Ms.shape[0])
-    mcmc_time_per_itr = np.zeros(Ms.shape[0])
-    csizes = np.zeros(Ms.shape[0])
-    Fs = np.zeros(Ms.shape[0])
-    rklw = np.zeros(Ms.shape[0])
-    fklw = np.zeros(Ms.shape[0])
-    mu_errs = np.zeros(Ms.shape[0])
-    Sig_errs = np.zeros(Ms.shape[0])
+    t_build = 0.
+    t_sample_per_itr = 0.
+    csize = 0.
+    F = 0.
+    rklw = 0.
+    fklw = 0.
+    mu_err = 0.
+    sig_err = 0.
 
     print('Running coreset construction / MCMC for ' + arguments.dataset + ' ' + arguments.alg + ' ' + str(
         arguments.trial))

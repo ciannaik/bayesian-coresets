@@ -1,9 +1,8 @@
 import numpy as np
 from scipy.optimize import minimize
 from scipy.linalg import solve_triangular
-from posterior import Posterior
 
-class LaplacePosterior(Posterior):
+class LaplaceApprox(object):
     def __init__(self, log_joint, grad_log_joint, th0, hess_log_joint=None, diag_hess_log_joint=None, trials=10):
         self.log_joint = log_joint
         self.grad_log_joint = grad_log_joint
@@ -22,20 +21,20 @@ class LaplacePosterior(Posterior):
         _th0 = self.th0.copy()
         for i in range(self.trials):
             try:
-                res = minimize(lambda mu: -self.log_joint(mu)[0], _th0,
-                               jac=lambda mu: -self.grad_log_joint(mu)[0, :])
+                res = minimize(lambda mu: -self.log_joint(mu), _th0,
+                               jac=lambda mu: -self.grad_log_joint(mu))
                 self.th = res.x
             except Exception as e:
                 print(e)
                 _th0 += np.sqrt((_th0 ** 2).sum()) * 0.1 * np.random.randn(_th0.shape[0])
                 continue
             break
-    if self.diag:
-        self.LSigInv = np.sqrt(-self.hess_log_joint(self.th)[0, :])
-        self.LSig = 1. / LSigInv
-    else:
-        self.LSigInv = np.linalg.cholesky(-self.hess_log_joint(self.th)[0, :, :])
-        self.LSig = solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+        if self.diag:
+            self.LSigInv = np.sqrt(-self.hess_log_joint(self.th))
+            self.LSig = 1. / LSigInv
+        else:
+            self.LSigInv = np.linalg.cholesky(-self.hess_log_joint(self.th))
+            self.LSig = solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
     def sample(self, n):
         if self.diag:
