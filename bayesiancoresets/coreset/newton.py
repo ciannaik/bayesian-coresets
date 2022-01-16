@@ -5,7 +5,7 @@ from .coreset import Coreset
 from scipy.linalg import solve_triangular
 
 
-class ApproxNewtonCoreset(Coreset):
+class QuasiNewtonCoreset(Coreset):
     def __init__(self, data, ll_projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100,
                  step_sched=lambda i: 1. / (i + 1), posterior_mean=None, posterior_Lsiginv=None, **kw):
         self.data = data
