@@ -64,6 +64,8 @@ def run(arguments):
     mu0 = 0
     sig0 = 2
 
+    #TODO change the model to have mu0 and sig0 inputs -- Stan code is updated to have it, but the log_joint needs it too
+
     # set the synthetic data params (if we're using synthetic data)
     N_synth = 100
     d_subspace = 5
@@ -177,8 +179,10 @@ def run(arguments):
 
  
     #print('Evaluation ' + log_suffix)
-    #muw = cst_samples.mean(axis=0)
-    #Sigw = np.cov(cst_samples, rowvar=False)
+    ## TODO compute stein discrepancy here
+    ## TODO compute mean/cov error here
+    #muw = approx_samples.mean(axis=0)
+    #Sigw = np.cov(approx_samples, rowvar=False)
     #LSigw = np.linalg.cholesky(Sigw)
     #LSigwInv = solve_triangular(LSigw, np.eye(LSigw.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
