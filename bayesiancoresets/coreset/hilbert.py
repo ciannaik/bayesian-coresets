@@ -47,7 +47,7 @@ class HilbertCoreset(Coreset):
     # extract the results from the snnls object
     w = self.snnls.weights()
     self.wts = w[w>0]
-    self.idcs = self.sub_idcs[w>0]
+    self.idcs = np.where(w>0)[0]
     self.pts = self.data[self.idcs]
 
   def _optimize(self):
