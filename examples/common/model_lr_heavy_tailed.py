@@ -143,16 +143,12 @@ data {
 parameters {
   vector[d] theta; // auxiliary parameter
 }
-transformed parameters {
-  vector[n] f;
-  f = x*theta;
-}
 model {
   for(i in 1:d){
     theta[i] ~ cauchy(0, 2);
   }
   for(i in 1:n){
-    target +=  bernoulli_logit_lupmf(y[i] | f[i]) * w[i];
+    target +=  bernoulli_logit_lupmf(y[i] | x[i]*theta) * w[i];
   }
 }
 """
