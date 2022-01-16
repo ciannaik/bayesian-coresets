@@ -201,7 +201,8 @@ def run(arguments):
 
 
     print('Saving ' + log_suffix)
-    results.save(arguments, coreset_size=arguments.coreset_size, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+    results.save(arguments, alg = arguments.alg, trial = arguments.trial, coreset_size=arguments.coreset_size,
+                 t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')

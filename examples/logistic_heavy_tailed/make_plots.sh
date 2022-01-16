@@ -10,9 +10,7 @@
 #for dnm in "synth_lr" "phishing" "ds1"
 for dnm in "synth_lr_cauchy"
 do
-    python3 main.py --model lr --dataset $dnm plot Ms rklw --summarize trial --groupby Ms --plot_type line --plot_legend alg --plot_x_label "Iterations" --plot_y_label "Reverse KL"
-    python3 main.py --model lr --dataset $dnm plot csizes rklw --summarize trial --groupby Ms --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Reverse KL"
-    python3 main.py --model lr --dataset $dnm plot cputs rklw --summarize trial --groupby Ms --plot_type line --plot_legend alg --plot_x_label "CPU Time (s)" --plot_y_label "Reverse KL"
+    python3 main.py --model lr --dataset $dnm plot coreset_size rklw --summarize trial --plot_type line --plot_legend alg --plot_x_label "Build Time (s)" --plot_y_label "Reverse KL"
 done
 
 #for dnm in "synth_poiss" "biketrips" "airportdelays"

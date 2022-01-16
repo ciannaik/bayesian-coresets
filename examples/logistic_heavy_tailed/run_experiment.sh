@@ -6,8 +6,11 @@ do
     do
         for ID in 15
         do
-		python3 main.py --model lr --dataset $dnm --alg $alg --trial $ID run
-	done
+        	for M in 10 50 100
+        	do
+				python3 main.py --model lr --dataset $dnm --coreset_size $M --alg $alg --trial $ID run
+			done
+		done
     done
 done
 
