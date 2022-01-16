@@ -69,15 +69,16 @@ def run(sampler_data, N_samples, model_name, model_code, seed, stan_folder = '..
     print('STAN: building/loading model ' + model_name)
     sm = build_model(stan_folder, model_name, model_code, sampler_data, seed)
 
-    print('STAN: sampling ' + model_name)
-    t0 = time.process_time()
+    print('STAN: generating ' + str(N_samples) + ' samples from ' + model_name)
+    t0 = time.perf_counter()
     #call sampling with N_samples actual iterations, and some number of burn iterations
     if init is None:
         fit = sm.sample(num_samples=N_samples, num_chains=chains, delta=0.9, max_depth=15)
     else:
         fit = sm.sample(num_samples=N_samples, num_chains=chains, init=init, delta=0.9, max_depth=15)
 
-    t_sample = time.process_time() - t0
+    t_sample = time.perf_counter() - t0
+    print('STAN: total time ' + str(t_sample) + ' seconds')
     return fit, t_sample
 
 
