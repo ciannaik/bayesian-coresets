@@ -78,8 +78,10 @@ def run(sampler_data, N_samples, model_name, model_code, seed, stan_folder = '..
         fit = sm.sample(num_samples=N_samples, num_chains=chains, init=init, delta=0.9, max_depth=15)
 
     t_sample = time.perf_counter() - t0
-    print('STAN: total time ' + str(t_sample) + ' seconds')
-    return fit, t_sample
+    t_per_iter = t_sample/(2.*N_samples) #denominator *2 since stan doubles the number of samples for tuning
+    print('STAN: total time: ' + str(t_sample) + ' seconds')
+    print('STAN: time per iteration: ' + str(t_per_iter) + ' seconds')
+    return fit, t_sample, t_per_iter
 
 
 # TODO test weighted CPP using randomly chosen integer weights
