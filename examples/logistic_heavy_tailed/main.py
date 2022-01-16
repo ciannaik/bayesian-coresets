@@ -35,6 +35,7 @@ def plot(arguments):
 
 
 def run(arguments):
+    # random comment
     log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', data: ' + arguments.dataset + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
 
     #######################################
