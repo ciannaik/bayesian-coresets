@@ -15,6 +15,7 @@ import mcmc
 import laplace
 import results
 import plotting
+import stein
 from model_gaussian import KL
 
 
@@ -33,7 +34,7 @@ def plot(arguments):
     plotting.plot(arguments, resdf)
 
 
-def run(arguments): 
+def run(arguments):
     log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', data: ' + arguments.dataset + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
 
     #######################################
@@ -148,8 +149,8 @@ def run(arguments):
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched))
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]))[0],
-				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:], 
-                                    np.zeros(Z.shape[1]), 
+				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:],
+                                    np.zeros(Z.shape[1]),
 				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]))[0,:,:])
 
     algs = {'SVI' : sparsevi,
@@ -159,7 +160,7 @@ def run(arguments):
             'UNIF': unif}
     alg = algs[arguments.alg]
 
-    
+
     print('Building ' + log_suffix)
     # Recursive alg needs to be run fully each time
     t0 = time.perf_counter()
@@ -177,23 +178,34 @@ def run(arguments):
     else:
         approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.mcmc_samples_coreset, get_timing=True)
 
- 
-    #print('Evaluation ' + log_suffix)
-    ## TODO compute stein discrepancy here
-    ## TODO compute mean/cov error here
-    #muw = approx_samples.mean(axis=0)
-    #Sigw = np.cov(approx_samples, rowvar=False)
-    #LSigw = np.linalg.cholesky(Sigw)
-    #LSigwInv = solve_triangular(LSigw, np.eye(LSigw.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
-    #rklw = KL(muw, Sigw, mup, LSigpInv.T.dot(LSigpInv))
-    #fklw = KL(mup, Sigp, muw, LSigwInv.T.dot(LSigwInv))
-    #mu_err = np.sqrt(((mup - muw) ** 2).sum()) / np.sqrt((mup ** 2).sum())
-    #Sig_err = np.sqrt(((Sigp - Sigw) ** 2).sum()) / np.sqrt((Sigp ** 2).sum())
+    print('Evaluation ' + log_suffix)
+    # get full/approx posterior mean/covariance
+    mu_approx = approx_samples.mean(axis=0)
+    Sig_approx = np.cov(approx_samples, rowvar=False)
+    LSig_approx = np.linalg.cholesky(Sig_approx)
+    LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    mu_full = full_samples.mean(axis=0)
+    Sig_full = np.cov(full_samples, rowvar=False)
+    LSig_full = np.linalg.cholesky(Sig_full)
+    LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    # compute the relative 2 norm error for mean and covariance
+    mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
+    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
+    # compute gaussian reverse/forward KL
+    rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
+    fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
+    # compute stein discrepancies
+    # note: we evaluate the grad log p under the full posterior for both sample sets
+    scores_approx = model.grad_th_log_joint(Z, samples_approx, np.ones(Z.shape[0]))
+    scores_full = model.grad_th_log_joint(Z, samples_full, np.ones(Z.shape[0]))
+    gauss_stein = gaussian_stein_discrepancy(samples_approx, samples_full, scores_approx, scores_full)
+    imq_stein = imq_stein_discrepancy(samples_approx, samples_full, scores_approx, scores_full)
 
-    #print('Saving ' + log_suffix)
-    #results.save(arguments, csizes=csizes, Ms=Ms, cputs=cputs, Fs=Fs, full_mcmc_time_per_itr=t_full_mcmc_per_itr,
-    #             mcmc_time_per_itr=mcmc_time_per_itr, rklw=rklw, fklw=fklw, mu_errs=mu_errs, Sig_errs=Sig_errs)
+
+    print('Saving ' + log_suffix)
+    results.save(arguments, coreset_size=arguments.coreset_size, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
 
