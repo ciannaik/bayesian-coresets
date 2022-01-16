@@ -36,28 +36,44 @@ def load_matching(match_dict, results_folder = 'results/', log_file = 'manifest.
     return df
 
 def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kwargs):
-    #create results filenames/argument hashes/dict
-    arg_hash = hash_namespace(arguments)
-    argd = vars(arguments)
 
-    manifest_line = arg_hash+': '+ str(argd) + '\n'
+    # convert the arguments namespace to a dictionary
+    nsdict = vars(arguments)
+
+    # remove any names in the nsdict that appear in the "output" (i.e. "data") variables
+    for kw, val in kwargs.items():
+        nsdict.pop(kw, None)
+
+    # remove the 'func' argument if its there (cant hash function objects)
+    nsdict.pop('func', None)
+
+    # hash the input arguments
+    arg_hash = hashlib.md5(json.dumps(nsdict, sort_keys=True).encode('utf-8')).hexdigest()
 
     #make the results folder if it doesn't exist
     if not os.path.exists(results_folder):
       os.mkdir(results_folder)
 
-    #add the kwargs to the dict
-    for kw, val in kwargs.items():
-        argd[kw] = [val]
-
-    #save the df
-    df = pd.DataFrame(argd)
-    df.to_csv(os.path.join(results_folder, arg_hash+'.csv')) #, index=False)
-
-    #append to the manifest
-    with open(os.path.join(results_folder, log_file), 'a') as f:
-        f.write(manifest_line)
-
-
-
+    # if the file doesn't already exist, create the df file and append a line to manifest
+    # if it does, just add a row to the df
+    if not os.path.exists(os.path.join(results_folder, arg_hash+'.csv')):
+        with open(os.path.join(results_folder, log_file), 'a') as f:
+            manifest_line = arg_hash+': '+ str(nsdict) + '\n'
+            f.write(manifest_line)
+        #add the output variables back into the dict
+        for kw, val in kwargs.items():
+            nsdict[kw] = [val]
+        #save the df
+        df = pd.DataFrame(nsdict)
+        df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
+    else:
+        #add the output variables back into the dict
+        for kw, val in kwargs.items():
+            nsdict[kw] = val
+        # read the old df
+        df = pd.read_csv(os.path.join(results_folder, arg_hash+'.csv'))
+        # append the row
+        df = df.append(nsdict, ignore_index=True)
+        # save the csv file
+        df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
 
