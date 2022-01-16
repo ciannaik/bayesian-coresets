@@ -30,47 +30,13 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
   return x
 
 
-def an_opt(x0, obj, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i+1)):
+def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i+1)):
   # Define starting point
   x = x0.copy()
   for i in range(20):
-    # g = search_direction(x)
-    # # print("Norm of gradient is: {}".format(np.sqrt(np.sum(grd(x)**2))))
-    # # print("a of gradient is: {}".format(np.dot(grd(x),g)))
-    #
-    # # upd = 0.01/step_sched(i)*g
-    # upd = 0.1 * g
-    # # if i<5:
-    # #   upd = 0.1*g
-    # # else:
-    # #   upd = g
-    #
-    # x += upd
-    # # project onto x>=0
-    # x = np.maximum(x, 0.)
-
-    # Wolfe Condition Line Search
-
-    # Define search direction
-    # g = search_direction(x)
-    # print("a of gradient is: {}".format(np.dot(grd(x), g)))
-
-    # # Optimize step size
-    # a = line_search(obj, grd, x, g,c1=0.0)[0]
-    # if a is None:
-    #   break
-    # else:
-    #   upd = a*g
-    #   x += upd
-    #   # project onto x>=0
-    #   x = np.maximum(x, 0.)
-    #   continue
-    # break
-
     g = search_direction(x)
     # print("Norm of gradient is: {}".format(np.sqrt(np.sum(grd(x)**2))))
     print("a of gradient is: {}".format(np.dot(grd(x),g)))
-
 
     a=1.0
     k=0.9
@@ -92,8 +58,6 @@ def an_opt(x0, obj, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 
     x += upd
     # project onto x>=0
     x = np.maximum(x, 0.)
-
-
 
   return x
 
