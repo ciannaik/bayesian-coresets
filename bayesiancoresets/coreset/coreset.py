@@ -35,14 +35,14 @@ class Coreset(object):
   def error(self):
     raise NotImplementedError()
 
-  def build(self, itrs):
+  def build(self, size):
     if self.reached_numeric_limit:
       return
 
     if itrs <= 0:
       return
 
-    self._build(itrs)
+    self._build(size)
 
     #if we reached numeric limit during the current build, warn
     if self.reached_numeric_limit:
@@ -71,5 +71,5 @@ class Coreset(object):
   def _optimize(self):
     raise NotImplementedError
 
-  def _build(self, itrs):
+  def _build(self, size):
     raise NotImplementedError

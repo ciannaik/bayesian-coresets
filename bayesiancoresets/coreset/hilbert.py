@@ -4,34 +4,47 @@ from ..snnls.giga import GIGA
 from .coreset import Coreset
 
 class HilbertCoreset(Coreset):
-  def __init__(self, data, ll_projector, n_subsample=None, snnls=GIGA, **kw):
-
-    if n_subsample is None:
-      #user requested to work with the whole dataset
-      sub_idcs = np.arange(data.shape[0])
-      vecs = ll_projector.project(data)
-    else:
-      #user requested to work with a subsample of the large dataset
-      #randint is efficient (doesn't enumerate all possible indices) but we need to call unique after to avoid duplicates
-      sub_idcs = np.unique(np.random.randint(data.shape[0], size=n_subsample))
-      vecs = ll_projector.project(data[sub_idcs])
-
-      #remove any zero vectors; won't affect the coreset and may cause exception in snnls
-      nonzero_vecs = np.sqrt((vecs**2).sum(axis=1))>0.
-      sub_idcs = sub_idcs[nonzero_vecs]
-      vecs = vecs[nonzero_vecs,:]
-
-    self.snnls = snnls(vecs.T, vecs.sum(axis=0))
-    self.sub_idcs = sub_idcs
+  def __init__(self, data, projector, n_subsample=None, snnls=GIGA, **kw):
     self.data = data
+    self.projector = projector
+    self.snnls_class = snnls
+    self.snnls = None
     super().__init__(**kw)
 
   def reset(self):
-    self.snnls.reset()
+    if self.snnls is not None:
+        self.snnls.reset()
     super().reset()
 
-  def _build(self, itrs):
-    self.snnls.build(itrs)
+  def _build_projector(self, size):
+    cts = []
+    ct_idcs = []
+    for i in range(size):
+        f = np.random.randint(self.data.shape[0])
+        if f in ct_idcs:
+            cts[ct_idcs.index(f)] += 1
+        else:
+            ct_idcs.append(f)
+            cts.append(1)
+    wts = self.data.shape[0] * np.array(cts) / np.array(cts).sum()
+    idcs = np.array(ct_idcs)
+    self.projector.update(wts, self.data[idcs,:])
+
+  def _build(self, size):
+
+    # build a projector using a uniformly random coreset
+    self._build_projector(size)
+
+    # project the data log likelihoods
+    vecs = self.projector.project(self.data)
+
+    # construct the snnls object 
+    self.snnls = snnls_class(vecs.T, vecs.sum(axis=0))
+
+    # build the coreset
+    self.snnls.build(size)
+
+    # extract the results from the snnls object
     w = self.snnls.weights()
     self.wts = w[w>0]
     self.idcs = self.sub_idcs[w>0]

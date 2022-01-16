@@ -4,17 +4,17 @@ from ..util.opt import nn_opt
 from .coreset import Coreset
 
 class SparseVICoreset(Coreset):
-  def __init__(self, data, ll_projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100, step_sched=lambda i : 1./(1.+i), **kw): 
+  def __init__(self, data, projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100, step_sched=lambda i : 1./(1.+i), **kw): 
     self.data = data
-    self.ll_projector = ll_projector
+    self.projector = projector
     self.n_subsample_select = None if n_subsample_select is None else min(data.shape[0], n_subsample_select)
     self.n_subsample_opt = None if n_subsample_opt is None else min(data.shape[0], n_subsample_opt)
     self.step_sched = step_sched
     self.opt_itrs = opt_itrs
     super().__init__(**kw)
 
-  def _build(self, itrs):
-    for i in range(itrs):
+  def _build(self, size):
+    for i in range(size):
       #search for the next best point
       self._select()
       #update the weights
@@ -22,20 +22,20 @@ class SparseVICoreset(Coreset):
 
   def _get_projection(self, n_subsample, w, p):
     #update the projector
-    self.ll_projector.update(w, p)
+    self.projector.update(w, p)
 
     #construct a tangent space
     if n_subsample is None:
       sub_idcs = None
-      vecs = self.ll_projector.project(self.data)
+      vecs = self.projector.project(self.data)
       sum_scaling = 1.
     else:
       sub_idcs = np.random.randint(self.data.shape[0], size=n_subsample)
-      vecs = self.ll_projector.project(self.data[sub_idcs])
+      vecs = self.projector.project(self.data[sub_idcs])
       sum_scaling = self.data.shape[0]/n_subsample
 
     if self.pts.size > 0:
-      corevecs = self.ll_projector.project(self.pts)
+      corevecs = self.projector.project(self.pts)
     else:
       corevecs = np.zeros((0, vecs.shape[1]))
 

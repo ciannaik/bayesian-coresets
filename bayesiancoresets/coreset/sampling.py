@@ -14,8 +14,8 @@ class UniformSamplingCoreset(Coreset):
     self.ct_idcs = []
     super().reset()
 
-  def _build(self, itrs):
-    for i in range(itrs):
+  def _build(self, size):
+    for i in range(size):
       f = np.random.randint(self.data.shape[0])
       if f in self.ct_idcs:
         self.cts[self.ct_idcs.index(f)] += 1

@@ -6,12 +6,12 @@ from scipy.linalg import solve_triangular
 
 
 class QuasiNewtonCoreset(Coreset):
-    def __init__(self, data, ll_projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100,
+    def __init__(self, data, projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100,
                  step_sched=lambda i: 1. / (i + 1), **kw):
         self.data = data
         self.cts = []
         self.ct_idcs = []
-        self.ll_projector = ll_projector
+        self.projector = projector
         self.n_subsample_select = None if n_subsample_select is None else min(data.shape[0], n_subsample_select)
         self.n_subsample_opt = None if n_subsample_opt is None else min(data.shape[0], n_subsample_opt)
         self.step_sched = step_sched
@@ -23,39 +23,39 @@ class QuasiNewtonCoreset(Coreset):
         self.ct_idcs = []
         super().reset()
 
-    def _build(self, itrs):
+    def _build(self, size):
         # # reset data points
         # self.reset()
         # uniformly subset data points
-        self._select(itrs)
+        self._select(size)
         # optimize the weights
         self._optimize()
 
     def _get_projection(self, n_subsample, w, p, return_sum=False):
         # update the projector
-        self.ll_projector.update(w, p)
+        self.projector.update(w, p)
 
         # construct a tangent space
         if n_subsample is None:
             sub_idcs = None
-            vecs = self.ll_projector.project(self.data, return_sum=return_sum)
+            vecs = self.projector.project(self.data, return_sum=return_sum)
             sum_scaling = 1.
         else:
             sub_idcs = np.random.randint(self.data.shape[0], size=n_subsample)
-            vecs = self.ll_projector.project(self.data[sub_idcs], return_sum=return_sum)
+            vecs = self.projector.project(self.data[sub_idcs], return_sum=return_sum)
             sum_scaling = self.data.shape[0] / n_subsample
 
         if self.pts.size > 0:
-            corevecs = self.ll_projector.project(self.pts)
+            corevecs = self.projector.project(self.pts)
         else:
             corevecs = np.zeros((0, vecs.shape[1]))
 
-        muw, Lsigw = self.ll_projector.mv()
+        muw, Lsigw = self.projector.mv()
 
         return vecs, sum_scaling, sub_idcs, corevecs, muw, Lsigw
 
-    def _select(self, itrs):
-        for i in range(itrs):
+    def _select(self, size):
+        for i in range(size):
             f = np.random.randint(self.data.shape[0])
             if f in self.ct_idcs:
                 self.cts[self.ct_idcs.index(f)] += 1
