@@ -17,36 +17,6 @@ import plotting
 from model_gaussian import KL
 
 
-
-def get_laplace(wts, Z, mu0, model, diag=False):
-    trials = 10
-    Zw = Z[wts > 0, :]
-    ww = wts[wts > 0]
-    while True:
-        try:
-            res = minimize(lambda mu: -model.log_joint(Zw, mu, ww)[0], mu0,
-                           jac=lambda mu: -model.grad_th_log_joint(Zw, mu, ww)[0, :])
-            mu = res.x
-        except Exception as e:
-            print(e)
-            mu0 = mu0.copy()
-            mu0 += np.sqrt((mu0 ** 2).sum()) * 0.1 * np.random.randn(mu0.shape[0])
-            trials -= 1
-            if trials <= 0:
-                print('Tried laplace opt 10 times, failed')
-                mu = mu0
-                break
-            continue
-        break
-    if diag:
-        LSigInv = np.sqrt(-model.diag_hess_th_log_joint(Zw, mu, ww)[0, :])
-        LSig = 1. / LSigInv
-    else:
-        LSigInv = np.linalg.cholesky(-model.hess_th_log_joint(Zw, mu, ww)[0, :, :])
-        LSig = solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
-    return mu, LSig, LSigInv
-
-
 def plot(arguments):
     # load only the results that match (avoid high mem usage)
     to_match = vars(arguments)
@@ -63,66 +33,81 @@ def plot(arguments):
 
 
 def run(arguments):
+    #######################################
+    #######################################
+    ############# Setup ###################
+    #######################################
+    #######################################
+
     # check if result already exists for this run, and if so, quit
     if results.check_exists(arguments):
         print('Results already exist for arguments ' + str(arguments))
         print('Quitting.')
         quit()
 
-    #######################################
-    #######################################
-    ########### Step 0: Setup #############
-    #######################################
-    #######################################
-
     np.random.seed(arguments.trial)
     bc.util.set_verbosity(arguments.verbosity)
 
-    if arguments.coreset_size_spacing == 'log':
-        Ms = np.unique(
-            np.logspace(0., np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
-        Ms = np.unique(
-            np.logspace(np.log10(10.), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
-    else:
-        Ms = np.unique(np.linspace(1, arguments.coreset_size_max, arguments.coreset_num_sizes, dtype=np.int32))
-
     #######################################
     #######################################
-    ## Step 1: Define Model
+    ############ Define Model #############
     #######################################
     #######################################
 
-    if arguments.model == "lr":
-        import model_lr_heavy_tailed as model
-    elif arguments.model == "poiss":
-        import model_poiss as model
+    # import the model specification
+    import model_lr_heavy_tailed as model
+
+    # set the prior hyperparams
+    mu0 = 0
+    sig0 = 2
+
+    # set the synthetic data params (if we're using synthetic data)
+    N_synth = 100
+    d_subspace = 5
+    d_complement = 5
 
     #######################################
     #######################################
-    ## Step 2: Load Dataset & run full MCMC / Laplace
+    ############# Load Dataset  ###########
     #######################################
     #######################################
-    sigma = np.array([2, 2, 2, 2, 2, 2, 2])
-
-    print('Loading dataset ' + arguments.dataset)
+    print('Loading/creating dataset ' + arguments.dataset)
     if arguments.dataset == 'synth_lr_cauchy':
-        X, Y, Z, Zt, D, Xdat, Xpri, Zdat, Zpri, Ddat, Dpri = model.gen_synthetic(500)
+        X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
     else:
-        X, Y, Z, Zt, D = model.load_data('../data/' + arguments.dataset + '.npz')
+        X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
+    stanY = np.zeros(Y.shape[0])
+    stanY[:] = Y
+    stanY[stanY == -1] = 0
 
+    ####################################################################
+    ####################################################################
+    ###### Construct coreset sampler and log-likelihood projector ######
+    ####################################################################
+    ####################################################################
 
-    # NOTE: Sig0 is currently coded as identity in model_lr and model_pr (see log_prior).
-    # so if you change Sig0 here things might break.
-    # TODO: fix that...
+    def sample_w(n, wts, idcs, get_timing=False):
+        if idcs.shape[0] > 0:
+            sampler_data = {'x': X[idcs,:], 'y': stanY[idcs].astype(int), 'w': wts,
+                            'd': X.shape[1], 'n': idcs.shape[0], 'mu0' : mu0, 'sig0' : sig0}
+        else:
+            sampler_data = {'x': X[:1,:], 'y': stanY[:1].astype(int), 'w': np.zeros(1),
+                            'd': X.shape[1], 'n': 1, 'mu0' : mu0, 'sig0' : sig0}
+        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
+                                                            model.stan_code, arguments.trial)
+        if get_timing:
+            return samples, t_mcmc, t_mcmc_per_itr
+        else:
+            return samples
 
-    if arguments.model == "lr":
-        mu0 = np.zeros(Zdat.shape[1])
-        Sig0 = np.eye(Zdat.shape[1])
-        LSig0 = np.eye(Zdat.shape[1])
-    elif arguments.model == "poiss":
-        mu0 = np.zeros(X.shape[1])
-        Sig0 = np.eye(X.shape[1])
-        LSig0 = np.eye(X.shape[1])
+    projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
+                                                model.grad_z_log_likelihood)
+
+    #######################################
+    #######################################
+    ###### Run MCMC on the full data ######
+    #######################################
+    #######################################
 
     print('Checking for cached full MCMC samples')
     mcmc_cache_filename = 'mcmc_cache/full_samples_' + arguments.model + '_' + arguments.dataset + '.npz'
@@ -130,114 +115,14 @@ def run(arguments):
         print('Cache exists, loading')
         tmp__ = np.load(mcmc_cache_filename)
         full_samples = tmp__['samples']
-        full_mcmc_time_per_itr = tmp__['t']
+        t_full_mcmc_per_itr = tmp__['t']
     else:
         print('Cache doesnt exist, running MCMC')
-        # Sample the posterior corresponding to the non-zero components of X
-        # convert Y to Stan LR label format
-        stanY = np.zeros(Y.shape[0])
-        stanY[:] = Y
-        stanY[stanY == -1] = 0
-        sampler_data = {'x': Xdat, 'y': stanY.astype(int), 'w': np.ones(X.shape[0]), 'd': Xdat.shape[1],
-                        'n': Xdat.shape[0]}
-        nonzero_samples, t_full_mcmc = mcmc.run(sampler_data, arguments.mcmc_samples_full, arguments.model,
-                                             model.stan_representation, arguments.trial)
-        nonzero_samples = nonzero_samples['theta'].T
-        # TODO right now *2 to account for burn; but this should all be specified via tunable arguments
-        full_mcmc_time_per_itr = t_full_mcmc / (arguments.mcmc_samples_full * 2)
-        # Sample the zero-components from the prior
-        zero_samples = np.zeros((arguments.mcmc_samples_full,Dpri))
-        for i in range(Dpri):
-            zero_samples[:,i] = cauchy.rvs(loc=0, scale=sigma[i], size=arguments.mcmc_samples_full)
+        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.mcmc_samples_full, np.ones(X.shape[0]), 
+										np.arange(X.shape[0], dtype=np.int64), get_timing=True)
         if not os.path.exists('mcmc_cache'):
             os.mkdir('mcmc_cache')
-        full_samples = np.concatenate((zero_samples,nonzero_samples),axis=1)
-        np.savez(mcmc_cache_filename, samples=full_samples, t=full_mcmc_time_per_itr)
-
-    #######################################
-    #######################################
-    ## Step 3: Calculate Likelihoods/Projectors
-    #######################################
-    #######################################
-
-    # get Gaussian approximation to the true posterior
-    print('Approximating true posterior')
-    mup = full_samples[:,Dpri:].mean(axis=0)
-    Sigp = np.cov(full_samples[:,Dpri:], rowvar=False)
-    LSigp = np.linalg.cholesky(Sigp)
-    LSigpInv = solve_triangular(LSigp, np.eye(LSigp.shape[0]), lower=True, overwrite_b=True, check_finite=False)
-
-    # Approximate the posterior using a Laplace approximation (this will not work)
-    muLap, LSigLap, LSigLapInv = get_laplace(np.ones(Z.shape[0]), Z, np.zeros(X.shape[1]), model, diag=False)
-    lap_samples = muLap + np.random.randn(arguments.mcmc_samples_full, muLap.shape[0]).dot(LSigLap.T)
-
-    # create tangent space for well-tuned Hilbert coreset alg
-    # Assume we know the data generating process, and only use Laplace to
-    # sample the dimensions where there is data.
-    print('Creating tuned projector for Hilbert coreset construction')
-    muHat, LSigHat, LSigHatInv = get_laplace(np.ones(Zdat.shape[0]), Zdat, np.zeros(Xdat.shape[1]), model, diag=False)
-    sigmaHat = sigma
-    # sampler_optimal = lambda n, w, pts: (muHat + np.random.randn(n, muHat.shape[0]).dot(LSigHat.T), muHat, LSigHat)
-
-    def sampler_optimal(n, wts, pts):
-        # Concatenate Laplace approx with Cauchy samples
-        cauchy_samples_optimal = np.zeros((n, Dpri))
-        for i in range(Dpri):
-            cauchy_samples_optimal[:, i] = cauchy.rvs(loc=0, scale=sigmaHat[i], size=n)
-
-        laplace_samples_optimal = muHat + np.random.randn(n, muHat.shape[0]).dot(LSigHat.T)
-        samples_optimal = np.concatenate((cauchy_samples_optimal, laplace_samples_optimal), axis=1)
-
-        return samples_optimal, muHat, LSigHat
-
-    prj_optimal = bc.BlackBoxProjector(sampler_optimal, arguments.proj_dim, model.log_likelihood,
-                                       model.grad_z_log_likelihood)
-
-    # create tangent space for poorly-tuned Hilbert coreset alg
-    print('Creating untuned projector for Hilbert coreset construction')
-    Zhat = Zdat[np.random.randint(0, Zdat.shape[0], int(np.sqrt(Zdat.shape[0]))), :]
-    muHat2, LSigHat2, LSigHat2Inv = get_laplace(np.ones(Zhat.shape[0]), Zhat, np.zeros(Xdat.shape[1]), model,
-                                                diag=False)
-    sigmaHat2 = sigma
-    # sampler_realistic = lambda n, w, pts: (muHat2 + np.random.randn(n, muHat2.shape[0]).dot(LSigHat2.T), muHat2, LSigHat2)
-    def sampler_realistic(n, wts, pts):
-        # Concatenate Laplace approx with Cauchy samples
-        cauchy_samples_realistic = np.zeros((n, Dpri))
-        for i in range(Dpri):
-            cauchy_samples_realistic[:, i] = cauchy.rvs(loc=0, scale=sigmaHat[i], size=n)
-
-        laplace_samples_realistic = muHat2 + np.random.randn(n, muHat2.shape[0]).dot(LSigHat2.T)
-        samples_realistic = np.concatenate((cauchy_samples_realistic, laplace_samples_realistic), axis=1)
-
-        return samples_realistic, muHat2, LSigHat2
-
-
-    prj_realistic = bc.BlackBoxProjector(sampler_realistic, arguments.proj_dim, model.log_likelihood,
-                                         model.grad_z_log_likelihood)
-
-    print('Creating black box projector')
-
-    def sampler_w(n, wts, pts):
-        if wts is None or pts is None or pts.shape[0] == 0:
-            muw = mu0
-            LSigw = LSig0
-        else:
-            muw, LSigw, _ = get_laplace(wts, pts[:,Dpri:], np.zeros(Xdat.shape[1]), model, diag=False)
-
-        cauchy_samples = np.zeros((n, Dpri))
-        for i in range(Dpri):
-            cauchy_samples[:, i] = cauchy.rvs(loc=0, scale=sigma[i], size=n)
-
-        laplace_samples_w = muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T)
-        samples_w = np.concatenate((cauchy_samples, laplace_samples_w), axis=1)
-
-
-        return samples_w, muw, LSigw
-
-    prj_bb = bc.BlackBoxProjector(sampler_w, arguments.proj_dim, model.log_likelihood, model.grad_z_log_likelihood)
-
-    print('Creating black box projector for recursive Hilbert coreset construction')
-
+        np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
     #######################################
     #######################################
@@ -247,18 +132,16 @@ def run(arguments):
 
     print('Creating coreset construction objects')
     # create coreset construction objects
-    sparsevi = bc.SparseVICoreset(Z, prj_bb, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.ApproxNewtonCoreset(Z, prj_bb, opt_itrs=arguments.opt_itrs,
+    sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
+    giga = bc.HilbertCoreset(Z, projector)
+    newton = bc.ApproxNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched),
                                     posterior_mean=mup,posterior_Lsiginv=LSigpInv)
-    giga_optimal = bc.HilbertCoreset(Z, prj_optimal)
-    giga_realistic = bc.HilbertCoreset(Z, prj_realistic)
     unif = bc.UniformSamplingCoreset(Z)
-
     algs = {'SVI': sparsevi,
             'ANC': newton,
-            'GIGA-OPT': giga_optimal,
-            'GIGA-REAL': giga_realistic,
+            'LAP' : laplace,
+            'GIGA': giga_realistic,
             'UNIF': unif}
     alg = algs[arguments.alg]
 
@@ -274,54 +157,53 @@ def run(arguments):
     print('Running coreset construction / MCMC for ' + arguments.dataset + ' ' + arguments.alg + ' ' + str(
         arguments.trial))
     t_alg = 0.
-    for m in range(Ms.shape[0]):
-        print('M = ' + str(Ms[m]) + ': coreset construction, ' + arguments.alg + ' ' + arguments.dataset + ' ' + str(
-            arguments.trial))
-        # Recursive alg needs to be run fully each time
-        # this runs alg up to a level of M; on the next iteration, it will continue from where it left off
-        t0 = time.process_time()
-        itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m - 1])
-        alg.build(itrs)
-        t_alg += time.process_time() - t0
-        wts, pts, idcs = alg.get()
-        # wts, pts, idcs = alg.get_neg_weights()
+    print('M = ' + str(Ms[m]) + ': coreset construction, ' + arguments.alg + ' ' + arguments.dataset + ' ' + str(
+        arguments.trial))
+    # Recursive alg needs to be run fully each time
+    # this runs alg up to a level of M; on the next iteration, it will continue from where it left off
+    t0 = time.process_time()
+    itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m - 1])
+    alg.build(itrs)
+    t_alg += time.process_time() - t0
+    wts, pts, idcs = alg.get()
+    # wts, pts, idcs = alg.get_neg_weights()
 
-        print('M = ' + str(Ms[m]) + ': MCMC')
-        # Use MCMC on the coreset, measure time taken
-        stanY = np.zeros(idcs.shape[0])
-        stanY[:] = Y[idcs]
-        stanY[stanY == -1] = 0
-        sampler_data = {'x': Xdat[idcs, :], 'y': stanY.astype(int), 'w': wts, 'd': Xdat.shape[1], 'n': idcs.shape[0]}
-        cst_samples, t_cst_mcmc = mcmc.run(sampler_data, arguments.mcmc_samples_coreset, arguments.model,
-                                           model.stan_representation, arguments.trial)
-        cst_samples = cst_samples['theta'].T
-        # TODO see note above re: full mcmc sampling
-        t_cst_mcmc_per_step = t_cst_mcmc / (arguments.mcmc_samples_coreset * 2)
+    print('M = ' + str(Ms[m]) + ': MCMC')
+    # Use MCMC on the coreset, measure time taken
+    stanY = np.zeros(idcs.shape[0])
+    stanY[:] = Y[idcs]
+    stanY[stanY == -1] = 0
+    sampler_data = {'x': Xdat[idcs, :], 'y': stanY.astype(int), 'w': wts, 'd': Xdat.shape[1], 'n': idcs.shape[0]}
+    cst_samples, t_cst_mcmc = mcmc.run(sampler_data, arguments.mcmc_samples_coreset, arguments.model,
+                                       model.stan_code, arguments.trial)
+    cst_samples = cst_samples['theta'].T
+    # TODO see note above re: full mcmc sampling
+    t_cst_mcmc_per_step = t_cst_mcmc / (arguments.mcmc_samples_coreset * 2)
 
-        print('M = ' + str(Ms[m]) + ': Approximating posterior with Gaussian')
-        muw = cst_samples.mean(axis=0)
-        Sigw = np.cov(cst_samples, rowvar=False)
-        LSigw = np.linalg.cholesky(Sigw)
-        LSigwInv = solve_triangular(LSigw, np.eye(LSigw.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    print('M = ' + str(Ms[m]) + ': Approximating posterior with Gaussian')
+    muw = cst_samples.mean(axis=0)
+    Sigw = np.cov(cst_samples, rowvar=False)
+    LSigw = np.linalg.cholesky(Sigw)
+    LSigwInv = solve_triangular(LSigw, np.eye(LSigw.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
-        print('M = ' + str(Ms[m]) + ': Computing metrics')
-        cputs[m] = t_alg
-        mcmc_time_per_itr[m] = t_cst_mcmc_per_step
-        csizes[m] = (wts > 0).sum()
-        # csizes[m] = (wts != 0).sum()
+    print('M = ' + str(Ms[m]) + ': Computing metrics')
+    cputs[m] = t_alg
+    mcmc_time_per_itr[m] = t_cst_mcmc_per_step
+    csizes[m] = (wts > 0).sum()
+    # csizes[m] = (wts != 0).sum()
 
-        # gcs = np.array(
-        #     [model.grad_th_log_joint(Z[idcs, :], full_samples[i, :], wts) for i in range(full_samples.shape[0])])
-        # gfs = np.array(
-        #     [model.grad_th_log_joint(Z, full_samples[i, :], np.ones(Z.shape[0])) for i in range(full_samples.shape[0])])
-        # Fs[m] = (((gcs - gfs) ** 2).sum(axis=1)).mean()
-        rklw[m] = KL(muw, Sigw, mup, LSigpInv.T.dot(LSigpInv))
-        print("Reverse_KL = {}".format(rklw[m]))
-        fklw[m] = KL(mup, Sigp, muw, LSigwInv.T.dot(LSigwInv))
-        mu_errs[m] = np.sqrt(((mup - muw) ** 2).sum()) / np.sqrt((mup ** 2).sum())
-        Sig_errs[m] = np.sqrt(((Sigp - Sigw) ** 2).sum()) / np.sqrt((Sigp ** 2).sum())
+    # gcs = np.array(
+    #     [model.grad_th_log_joint(Z[idcs, :], full_samples[i, :], wts) for i in range(full_samples.shape[0])])
+    # gfs = np.array(
+    #     [model.grad_th_log_joint(Z, full_samples[i, :], np.ones(Z.shape[0])) for i in range(full_samples.shape[0])])
+    # Fs[m] = (((gcs - gfs) ** 2).sum(axis=1)).mean()
+    rklw[m] = KL(muw, Sigw, mup, LSigpInv.T.dot(LSigpInv))
+    print("Reverse_KL = {}".format(rklw[m]))
+    fklw[m] = KL(mup, Sigp, muw, LSigwInv.T.dot(LSigwInv))
+    mu_errs[m] = np.sqrt(((mup - muw) ** 2).sum()) / np.sqrt((mup ** 2).sum())
+    Sig_errs[m] = np.sqrt(((Sigp - Sigw) ** 2).sum()) / np.sqrt((Sigp ** 2).sum())
 
-    results.save(arguments, csizes=csizes, Ms=Ms, cputs=cputs, Fs=Fs, full_mcmc_time_per_itr=full_mcmc_time_per_itr,
+    results.save(arguments, csizes=csizes, Ms=Ms, cputs=cputs, Fs=Fs, full_mcmc_time_per_itr=t_full_mcmc_per_itr,
                  mcmc_time_per_itr=mcmc_time_per_itr, rklw=rklw, fklw=fklw, mu_errs=mu_errs, Sig_errs=Sig_errs)
 
 
