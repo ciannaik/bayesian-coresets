@@ -39,7 +39,7 @@ class HilbertCoreset(Coreset):
     vecs = self.projector.project(self.data)
 
     # construct the snnls object 
-    self.snnls = snnls_class(vecs.T, vecs.sum(axis=0))
+    self.snnls = self.snnls_class(vecs.T, vecs.sum(axis=0))
 
     # build the coreset
     self.snnls.build(size)

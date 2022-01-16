@@ -39,7 +39,7 @@ class Coreset(object):
     if self.reached_numeric_limit:
       return
 
-    if itrs <= 0:
+    if size <= 0:
       return
 
     self._build(size)
