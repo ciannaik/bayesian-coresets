@@ -12,18 +12,17 @@ def load_data(dnm):
   data.close()
   return X, Y, Z, None, Z.shape[1]
 
-def gen_synthetic(n):
-  mu = np.array([0, 0, 0])
-  cov = np.eye(3)
-  th = np.array([3, 3, 3, 3, 3, 3, 0])
-  X = np.zeros((n,7))
-  X[:,-1] = 1
-  X[:,3:-1] = np.random.multivariate_normal(mu, cov, n)
+def gen_synthetic(n, d_subspace, d_complement):
+
+  X = np.zeros((n, d_subspace+d_complement+1))
+  X[:, :d_subspace] = np.random.randn(n, d_subspace)
+  X[:, -1] = 1
+  th = 3*np.random.randn(X.shape[1])
   ps = 1.0/(1.0+np.exp(-(X*th).sum(axis=1)))
   y = (np.random.rand(n) <= ps).astype(int)
   y[y==0] = -1
   Z = y[:, np.newaxis]*X
-  return X, y, Z, None, Z.shape[1], X[:,3:], X[:,:3], Z[:,3:], Z[:,:3], Z[:,3:].shape[1], Z[:,:3].shape[1]
+  return X, y, Z, None
 
 def log_likelihood(z, th):
   z = np.atleast_2d(z)
@@ -132,20 +131,22 @@ def diag_hess_th_log_joint(z, th, wts):
 # """
 
 
-stan_representation = """
+stan_code = """
 data {
   int<lower=0> n; // number of observations
   int<lower=0> d; // number of predictors
   int<lower=0,upper=1> y[n]; // outputs
   matrix[n,d] x; // inputs
   vector<lower=0>[n] w;  // weights
+  real mu0; // prior mean
+  real sig0; // prior scale
 }
 parameters {
   vector[d] theta; // auxiliary parameter
 }
 model {
   for(i in 1:d){
-    theta[i] ~ cauchy(0, 2);
+    theta[i] ~ cauchy(mu0, sig0);
   }
   for(i in 1:n){
     target +=  bernoulli_logit_lupmf(y[i] | x[i]*theta) * w[i];
