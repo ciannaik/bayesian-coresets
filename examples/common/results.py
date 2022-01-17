@@ -5,42 +5,49 @@ import pickle as pk
 import pandas as pd
 import numpy as np
 
-def hash_namespace(ns):
-    nsdict = vars(ns)
-    nsdict.pop('func', None) #can't hash function objects
-    return hashlib.md5(json.dumps(nsdict, sort_keys=True).encode('utf-8')).hexdigest()
-
-def check_exists(arguments, results_folder = 'results/', log_file = 'manifest.csv'):
-    matching_hash = find_matching(vars(arguments), results_folder, log_file)
-    if os.path.exists(os.path.join(results_folder, matching_hash+'.csv')):
-        return True
-    return False
-
 def find_matching(to_match, results_folder = 'results/', log_file = 'manifest.csv'):
+    # immediately return no match if there's no results folder
+    if not os.path.exists(os.path.join(results_folder, log_file)):
+        return []
     # load the manifest
     with open(os.path.join(results_folder, log_file), 'r') as f:
         manifest = f.readlines()
+
+    # remove the 'func' argument (cant hash function objects)
+    to_match = to_match.copy() # avoid editing dict without caller knowing
+    to_match.pop('func', None)
+
     # split each manifest line into [hash, args_string]
     manifest = [ line.split(':', 1) for line in manifest]
     # find matching manifest lines
-    matching_hash = None
+    matching_hashes = []
     for line in manifest:
         str_args = line[1].strip()
-        args_dict = json.loads(str_args)
-        to_match_tmp = {key : val for (key, val) in to_match.items() if key in args_dict}
-        if to_match_tmp == args_dict:
-            if matching_hash is not None:
-                raise ValueError(f"ERROR: found two matches for arguments dict. Hash 1: {matching_hash} Hash 2: {line[0].strip()} to_match = {to_match}")
-            matching_hash = line[0].strip()
+        args_dict = {key : val for (key, val) in json.loads(str_args).items() if key in to_match}
+        if to_match == args_dict:
+            matching_hashes.append(line[0].strip())
+    return matching_hashes
 
-    return matching_hash
+def check_exists(arguments, results_folder = 'results/', log_file = 'manifest.csv'):
+    matching_hashes = find_matching(vars(arguments), results_folder, log_file)
+    if len(matching_hashes) == 0:
+        return False
+    if len(matching_hashes) > 1:
+        raise ValueError(f"ERROR: Multiple matching results cache files for arguments. Arguments: {arguments} Matching hashes: {matching_hashes}")
+    if os.path.exists(os.path.join(results_folder, matching_hashes[0]+'.csv')):
+        return True
+    return False
 
-def load_matching(to_match, results_folder = 'results/', log_file = 'manifest.csv'):
+def load_matching(arguments, match_ignore = [], results_folder = 'results/', log_file = 'manifest.csv'):
+    to_match = {key : val for (key,val) in vars(arguments).items() if key not in match_ignore}
     print("Plot: Matching arguments setting {to_match}")
-    matching_hash = find_matching(to_match, results_folder, log_file)
-    if matching_hash is None:
+    matching_hashes = find_matching(to_match, results_folder, log_file)
+    if len(matching_hashes) == 0:
         raise ValueError(f"ERROR: no matches for plotting. to_match = {to_match}")
-    df = pd.read_csv(os.path.join(results_folder, matching_hash+".csv"))
+    df = pd.DataFrame()
+    for mash in matching_hashes:
+        df_row = pd.read_csv(os.path.join(results_folder, matching_hash+".csv"))
+        df = df.append(df_row, ignore_index=True)
     print("Plotting data in dataframe:")
     pd.set_option("display.max_rows", None, "display.max_columns", None)
     print(df)
@@ -51,11 +58,7 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
     # convert the arguments namespace to a dictionary
     nsdict = vars(arguments)
 
-    # remove any names in the nsdict that appear in the "output" (i.e. "data") variables
-    for kw, val in kwargs.items():
-        nsdict.pop(kw, None)
-
-    # remove the 'func' argument if its there (cant hash function objects)
+    # remove the 'func' argument (cant hash function objects)
     nsdict.pop('func', None)
 
     # hash the input arguments
@@ -71,11 +74,13 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
             manifest_line = arg_hash+':'+ json.dumps(nsdict, sort_keys=True) + '\n'
             f.write(manifest_line)
 
-    #add the output variables back into the dict
-    for kw, val in kwargs.items():
-        nsdict[kw] = [val]
+    # add the kwargs into the data dict
+    for key, val in kwargs.items():
+        if key in nsdict:
+            raise ValueError(f"ERROR: key {key} (val {val}) already in namespace; cannot save this as data. Namespace: {arguments}")
+        nsdict[key] = val
 
     #save the df, overwriting a previous result
-    df = pd.DataFrame(nsdict)
+    df = pd.DataFrame({key:[val] for (key,val) in nsdict.items()})
     df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
 

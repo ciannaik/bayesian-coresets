@@ -21,7 +21,7 @@ from model_gaussian import KL
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
-    df = results.load_matching(vars(arguments))
+    df = results.load_matching(arguments, match_ignore = ['alg', 'coreset_size', 'trial'])
     # call the generic plot function
     plotting.plot(arguments, df)
 
@@ -194,8 +194,7 @@ def run(arguments):
 
 
     print('Saving ' + log_suffix)
-    results.save(arguments, alg = arguments.alg, trial = arguments.trial, coreset_size=arguments.coreset_size,
-                 t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+    results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
