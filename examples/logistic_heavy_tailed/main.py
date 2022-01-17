@@ -21,7 +21,7 @@ from model_gaussian import KL
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
-    df = results.load_matching(arguments, match_ignore = ['alg', 'coreset_size', 'trial'])
+    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
     # call the generic plot function
     plotting.plot(arguments, df)
 

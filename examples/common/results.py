@@ -38,15 +38,15 @@ def check_exists(arguments, results_folder = 'results/', log_file = 'manifest.cs
         return True
     return False
 
-def load_matching(arguments, match_ignore = [], results_folder = 'results/', log_file = 'manifest.csv'):
-    to_match = {key : val for (key,val) in vars(arguments).items() if key not in match_ignore}
+def load_matching(arguments, match = [], results_folder = 'results/', log_file = 'manifest.csv'):
+    to_match = {key : val for (key,val) in vars(arguments).items() if key in match}
     print("Plot: Matching arguments setting {to_match}")
     matching_hashes = find_matching(to_match, results_folder, log_file)
     if len(matching_hashes) == 0:
         raise ValueError(f"ERROR: no matches for plotting. to_match = {to_match}")
     df = pd.DataFrame()
     for mash in matching_hashes:
-        df_row = pd.read_csv(os.path.join(results_folder, matching_hash+".csv"))
+        df_row = pd.read_csv(os.path.join(results_folder, mash+".csv"))
         df = df.append(df_row, ignore_index=True)
     print("Plotting data in dataframe:")
     pd.set_option("display.max_rows", None, "display.max_columns", None)
