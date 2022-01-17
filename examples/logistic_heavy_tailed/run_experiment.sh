@@ -4,7 +4,7 @@ for dnm in "synth_lr_cauchy"
 do
     for alg in "UNIF" "GIGA" "QNC"
     do
-        for ID in 15
+        for ID in 15 3 5 10
         do
         	for M in 10 50 100
         	do

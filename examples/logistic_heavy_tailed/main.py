@@ -20,18 +20,10 @@ from model_gaussian import KL
 
 
 def plot(arguments):
-    # load only the results that match (avoid high mem usage)
-    to_match = vars(arguments)
-    # remove any ignored params
-    if arguments.summarize is not None:
-        for nm in arguments.summarize:
-            to_match.pop(nm, None)
-    # remove any legend param
-    to_match.pop(arguments.plot_legend, None)
-    # load cols from results dfs that match remaining keys
-    resdf = results.load_matching(to_match)
+    # load the dataset of results that matches these input arguments
+    df = results.load_matching(vars(arguments))
     # call the generic plot function
-    plotting.plot(arguments, resdf)
+    plotting.plot(arguments, df)
 
 
 def run(arguments):
@@ -263,8 +255,6 @@ plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter']
                             help="Type of plot to make")
 plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
-plot_subparser.add_argument('--summarize', type=str, nargs='*',
-                            help='The command line arguments to ignore value of when matching to plot a subset of data. E.g. --summarize trial data_num will compute result statistics over both trial and number of datapoints')
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 

@@ -10,29 +10,40 @@ def hash_namespace(ns):
     nsdict.pop('func', None) #can't hash function objects
     return hashlib.md5(json.dumps(nsdict, sort_keys=True).encode('utf-8')).hexdigest()
 
-def check_exists(arguments, results_folder = 'results/'):
-    arg_hash = hash_namespace(arguments)
-    if os.path.exists(os.path.join(results_folder, arg_hash+'.csv')):
+def check_exists(arguments, results_folder = 'results/', log_file = 'manifest.csv'):
+    matching_hash = find_matching(vars(arguments), results_folder, log_file)
+    if os.path.exists(os.path.join(results_folder, matching_hash+'.csv')):
         return True
     return False
 
-def load_matching(match_dict, results_folder = 'results/', log_file = 'manifest.csv'):
-    resfiles = [fn for fn in os.listdir(results_folder) if fn != log_file and fn[-4:] == '.csv']
-    df = None
-    for resfile in resfiles:
-        #load the results file
-        resdf = pd.read_csv(os.path.join(results_folder, resfile))
-        #get the intersection of column names and argnames
-        cols_to_match = list(set(resdf.columns.tolist()).intersection(set(match_dict)))
-        #extract the matching rows
-        resdf = resdf.loc[(resdf[cols_to_match] == pd.Series({m:v for m, v in match_dict.items() if m in cols_to_match})).all(axis=1)]
-        if resdf.shape[0] > 0:
-            #if df hasn't been initialized yet, just use resdf; otherwise, append
-            if df is None:
-                df = resdf
-            else:
-                df = df.append(resdf)
+def find_matching(to_match, results_folder = 'results/', log_file = 'manifest.csv'):
+    # load the manifest
+    with open(os.path.join(results_folder, log_file), 'r') as f:
+        manifest = f.readlines()
+    # split each manifest line into [hash, args_string]
+    manifest = [ line.split(':', 1) for line in manifest]
+    # find matching manifest lines
+    matching_hash = None
+    for line in manifest:
+        str_args = line[1].strip()
+        args_dict = json.loads(str_args)
+        to_match_tmp = {key : val for (key, val) in to_match.items() if key in args_dict}
+        if to_match_tmp == args_dict:
+            if matching_hash is not None:
+                raise ValueError(f"ERROR: found two matches for arguments dict. Hash 1: {matching_hash} Hash 2: {line[0].strip()} to_match = {to_match}")
+            matching_hash = line[0].strip()
 
+    return matching_hash
+
+def load_matching(to_match, results_folder = 'results/', log_file = 'manifest.csv'):
+    print("Plot: Matching arguments setting {to_match}")
+    matching_hash = find_matching(to_match, results_folder, log_file)
+    if matching_hash is None:
+        raise ValueError(f"ERROR: no matches for plotting. to_match = {to_match}")
+    df = pd.read_csv(os.path.join(results_folder, matching_hash+".csv"))
+    print("Plotting data in dataframe:")
+    pd.set_option("display.max_rows", None, "display.max_columns", None)
+    print(df)
     return df
 
 def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kwargs):
@@ -55,25 +66,16 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
       os.mkdir(results_folder)
 
     # if the file doesn't already exist, create the df file and append a line to manifest
-    # if it does, just add a row to the df
     if not os.path.exists(os.path.join(results_folder, arg_hash+'.csv')):
         with open(os.path.join(results_folder, log_file), 'a') as f:
-            manifest_line = arg_hash+': '+ str(nsdict) + '\n'
+            manifest_line = arg_hash+':'+ json.dumps(nsdict, sort_keys=True) + '\n'
             f.write(manifest_line)
-        #add the output variables back into the dict
-        for kw, val in kwargs.items():
-            nsdict[kw] = [val]
-        #save the df
-        df = pd.DataFrame(nsdict)
-        df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
-    else:
-        #add the output variables back into the dict
-        for kw, val in kwargs.items():
-            nsdict[kw] = val
-        # read the old df
-        df = pd.read_csv(os.path.join(results_folder, arg_hash+'.csv'))
-        # append the row
-        df = df.append(nsdict, ignore_index=True)
-        # save the csv file
-        df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
+
+    #add the output variables back into the dict
+    for kw, val in kwargs.items():
+        nsdict[kw] = [val]
+
+    #save the df, overwriting a previous result
+    df = pd.DataFrame(nsdict)
+    df.to_csv(os.path.join(results_folder, arg_hash+'.csv'), index=False)
 
