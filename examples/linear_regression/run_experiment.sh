@@ -1,18 +1,13 @@
 #!/bin/bash
 
-
-for alg in "UNIF" "GIGA-REAL" "GIGA-REAL-EXACT" "GIGA-OPT" "GIGA-OPT-EXACT" "SVI"
-do 
-    for ID in {1..3}
+for alg in "UNIF" "GIGA" "QNC"
+do
+    for ID in 15 3 5 10
     do
-        python3 main.py --alg $alg --trial $ID run
-    done
+    	for M in 10 50 100
+    	do
+			python3 main.py --data_num 500 --coreset_size $M --alg $alg --trial $ID run
+		done
+	done
 done
 
-for alg in "SVI-EXACT" 
-do 
-    for ID in {1..3}
-    do
-        python3 main.py --alg $alg --trial $ID --proj_dim 30 run
-    done
-done
