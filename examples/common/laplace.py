@@ -18,7 +18,7 @@ class LaplaceApprox(object):
             self.hess_log_joint = diag_hess_log_joint
             self.diag = True
 
-    def build(self):
+    def build(self, size):
         _th0 = self.th0.copy()
         for i in range(self.trials):
             try:
@@ -32,10 +32,10 @@ class LaplaceApprox(object):
             break
         if self.diag:
             self.LSigInv = np.sqrt(-self.hess_log_joint(self.th))
-            self.LSig = 1. / LSigInv
+            self.LSig = 1. / self.LSigInv
         else:
             self.LSigInv = np.linalg.cholesky(-self.hess_log_joint(self.th))
-            self.LSig = solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+            self.LSig = solve_triangular(self.LSigInv, np.eye(self.LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
     def sample(self, n, get_timing = False):
         t0 = time.perf_counter()

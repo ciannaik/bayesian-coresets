@@ -66,7 +66,7 @@ class QuasiNewtonCoreset(Coreset):
 
     def _optimize(self):
         
-        def search_direction(w, alpha=0.1):
+        def search_direction(w, alpha=0.01):
             # vecs_sum, sum_scaling, sub_idcs, corevecs, muw, Lsigw = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
                                                                                      return_sum=False)

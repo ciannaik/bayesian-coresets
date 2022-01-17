@@ -66,9 +66,9 @@ def run(arguments):
     sig0 = 2
 
     # set the synthetic data params (if we're using synthetic data)
-    N_synth = 100
-    d_subspace = 5
-    d_complement = 5
+    N_synth = 500
+    d_subspace = 1
+    d_complement = 1
 
     #######################################
     #######################################
@@ -149,10 +149,10 @@ def run(arguments):
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
 				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
                                     np.zeros(Z.shape[1]),
-				    hess_log_joint = lambda th : hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
+				    hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
 
     algs = {'SVI' : sparsevi,
-            'ANC' : newton,
+            'QNC' : newton,
             'LAP' : lapl,
             'GIGA': giga,
             'UNIF': unif}
@@ -227,13 +227,13 @@ parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
 parser.add_argument('--dataset', type=str, default="synth_lr_cauchy",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='GIGA',
-                    choices=['SVI', 'ANC', 'GIGA', 'UNIF', 'LAP'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=500,
+parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=20, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for methods that use iterative weight refinement)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
@@ -269,6 +269,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
+# arguments.func(arguments)
+run(arguments)
 
