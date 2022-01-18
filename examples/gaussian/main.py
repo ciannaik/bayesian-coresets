@@ -176,8 +176,8 @@ def run(arguments):
     imq_mmd = stein.imq_mmd(approx_samples, full_samples)
     # compute stein discrepancies
     scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, scores_approx)
-    imq_stein = stein.imq_stein_discrepancy(approx_samples, scores_approx)
+    gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
+    imq_stein = stein.imq_stein(approx_samples, scores_approx)
 
 
     print('Saving ' + log_suffix)
