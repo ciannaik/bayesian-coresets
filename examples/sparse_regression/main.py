@@ -3,6 +3,7 @@ import numpy as np
 import bayesiancoresets as bc
 from scipy.optimize import minimize
 from scipy.linalg import solve_triangular
+from scipy.stats import cauchy
 import time
 import sys, os
 import argparse
@@ -11,372 +12,116 @@ from pstats import SortKey
 # make it so we can import models/etc from parent folder
 sys.path.insert(1, os.path.join(sys.path[0], '../common'))
 import mcmc
+import laplace
 import results
 import plotting
+import stein
 from model_gaussian import KL
 
 
-def get_laplace(wts, Z, mu0, model, diag=False):
-    trials = 10
-    Zw = Z[wts > 0, :]
-    ww = wts[wts > 0]
-    while True:
-        try:
-            res = minimize(lambda mu: -model.log_joint(Zw, mu, ww)[0], mu0,
-                           jac=lambda mu: -model.grad_th_log_joint(Zw, mu, ww)[0, :])
-            mu = res.x
-        except Exception as e:
-            print(e)
-            mu0 = mu0.copy()
-            mu0 += np.sqrt((mu0 ** 2).sum()) * 0.1 * np.random.randn(mu0.shape[0])
-            trials -= 1
-            if trials <= 0:
-                print('Tried laplace opt 10 times, failed')
-                mu = mu0
-                break
-            continue
-        break
-    if diag:
-        LSigInv = np.sqrt(-model.diag_hess_th_log_joint(Zw, mu, ww)[0, :])
-        LSig = 1. / LSigInv
-    else:
-        LSigInv = np.linalg.cholesky(-model.hess_th_log_joint(Zw, mu, ww)[0, :, :])
-        LSig = solve_triangular(LSigInv, np.eye(LSigInv.shape[0]), lower=True, overwrite_b=True, check_finite=False)
-    return mu, LSig, LSigInv
-
-
 def plot(arguments):
-    # load only the results that match (avoid high mem usage)
-    to_match = vars(arguments)
-    # remove any ignored params
-    if arguments.summarize is not None:
-        for nm in arguments.summarize:
-            to_match.pop(nm, None)
-    # remove any legend param
-    to_match.pop(arguments.plot_legend, None)
-    # load cols from results dfs that match remaining keys
-    resdf = results.load_matching(to_match)
+    # load the dataset of results that matches these input arguments
+    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
     # call the generic plot function
-    plotting.plot(arguments, resdf)
+    plotting.plot(arguments, df)
 
 
 def run(arguments):
+    # suffix for printouts
+    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', data: ' + arguments.dataset + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
+
+    #######################################
+    #######################################
+    ############# Setup ###################
+    #######################################
+    #######################################
+
     # check if result already exists for this run, and if so, quit
     if results.check_exists(arguments):
         print('Results already exist for arguments ' + str(arguments))
         print('Quitting.')
         quit()
 
-    #######################################
-    #######################################
-    ########### Step 0: Setup #############
-    #######################################
-    #######################################
-
     np.random.seed(arguments.trial)
     bc.util.set_verbosity(arguments.verbosity)
 
-    if arguments.coreset_size_spacing == 'log':
-        Ms = np.unique(
-            np.logspace(0., np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
-        # Ms = np.unique(
-        #     np.logspace(np.log10(50.), np.log10(arguments.coreset_size_max), arguments.coreset_num_sizes, dtype=np.int32))
+    #######################################
+    #######################################
+    ############ Define Model #############
+    #######################################
+    #######################################
+
+    # import the model specification
+    import model_lr_heavy_tailed as model
+
+    # set the prior hyperparams
+    sig0 = 2
+
+    # set the synthetic data params (if we're using synthetic data)
+    N_synth = 500
+    d_subspace = 1
+    d_complement = 1
+
+    #######################################
+    #######################################
+    ############# Load Dataset ############
+    #######################################
+    #######################################
+
+    print('Loading/creating dataset ' + log_suffix)
+    if arguments.dataset == 'synth_lr_cauchy':
+        X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
     else:
-        Ms = np.unique(np.linspace(1, arguments.coreset_size_max, arguments.coreset_num_sizes, dtype=np.int32))
+        X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
+    stanY = np.zeros(Y.shape[0])
+    stanY[:] = Y
+    stanY[stanY == -1] = 0
 
-    #######################################
-    #######################################
-    ## Step 1: Define Model
-    #######################################
-    #######################################
+    ####################################################################
+    ####################################################################
+    ############ Construct weighted posterior sampler ##################
+    ####################################################################
+    ####################################################################
 
-    if arguments.model == "lr":
-        import model_lr as model
-    elif arguments.model == "poiss":
-        import model_poiss as model
+    print('Creating weighted sampler ' + log_suffix)
+    def sample_w(n, wts, pts, get_timing=False):
+        # passing in X, Y into the stan sampler
+        # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
+        if pts.shape[0] > 0:
+            sampler_data = {'x': pts, 'y': np.ones(pts.shape[0], dtype=np.int64), 'w': wts,
+                            'd': pts.shape[1], 'n': pts.shape[0], 'sig0' : sig0}
+        else:
+            sampler_data = {'x': np.zeros((1,Z.shape[1])), 'y': np.ones(1,dtype=np.int64), 'w': np.zeros(1),
+                            'd': Z.shape[1], 'n': 1, 'sig0' : sig0}
+        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
+                                                            model.stan_code, arguments.trial)
 
-    #######################################
-    #######################################
-    ## Step 2: Load Dataset & run full MCMC / Laplace
-    #######################################
-    #######################################
-
-    print('Loading dataset ' + arguments.dataset)
-    if arguments.dataset == 'synth_lr_large':
-        X, Y, Z, Zt, D = model.gen_synthetic(10000)
-    else:
-        X, Y, Z, Zt, D = model.load_data('../data/' + arguments.dataset + '.npz')
-
-    # NOTE: Sig0 is currently coded as identity in model_lr and model_pr (see log_prior).
-    # so if you change Sig0 here things might break.
-    # TODO: fix that...
-    if arguments.model == "lr":
-        mu0 = np.zeros(Z.shape[1])
-        Sig0 = np.eye(Z.shape[1])
-        LSig0 = np.eye(Z.shape[1])
-    elif arguments.model == "poiss":
-        mu0 = np.zeros(X.shape[1])
-        Sig0 = np.eye(X.shape[1])
-        LSig0 = np.eye(X.shape[1])
+        if get_timing:
+            return samples['theta'].T, t_mcmc, t_mcmc_per_itr
+        else:
+            return samples['theta'].T
 
 
-    print('Checking for cached full MCMC samples')
+    #######################################
+    #######################################
+    ###### Run MCMC on the full data ######
+    #######################################
+    #######################################
+
+    print('Checking for cached full MCMC samples ' + log_suffix)
     mcmc_cache_filename = 'mcmc_cache/full_samples_' + arguments.model + '_' + arguments.dataset + '.npz'
     if os.path.exists(mcmc_cache_filename):
         print('Cache exists, loading')
         tmp__ = np.load(mcmc_cache_filename)
         full_samples = tmp__['samples']
-        full_mcmc_time_per_itr = tmp__['t']
+        t_full_mcmc_per_itr = float(tmp__['t'])
     else:
-        print('Cache doesnt exist, running MCMC')
-        # convert Y to Stan LR label format
-        stanY = np.zeros(Y.shape[0])
-        stanY[:] = Y
-        stanY[stanY == -1] = 0
-        sampler_data = {'x': X, 'y': stanY.astype(int), 'w': np.ones(X.shape[0]), 'd': X.shape[1], 'n': X.shape[0]}
-        full_samples, t_full_mcmc = mcmc.run(sampler_data, arguments.mcmc_samples_full, arguments.model,
-                                             model.stan_representation, arguments.trial)
-        full_samples = full_samples['theta'].T
-        # TODO right now *2 to account for burn; but this should all be specified via tunable arguments
-        full_mcmc_time_per_itr = t_full_mcmc / (arguments.mcmc_samples_full * 2)
+        print('Cache doesn\'t exist, running MCMC')
+        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
         if not os.path.exists('mcmc_cache'):
             os.mkdir('mcmc_cache')
-        np.savez(mcmc_cache_filename, samples=full_samples, t=full_mcmc_time_per_itr)
+        np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
-    #######################################
-    #######################################
-    ## Step 3: Calculate Likelihoods/Projectors
-    #######################################
-    #######################################
-
-    # get Gaussian approximation to the true posterior
-    print('Approximating true posterior')
-    mup = full_samples.mean(axis=0)
-    Sigp = np.cov(full_samples, rowvar=False)
-    LSigp = np.linalg.cholesky(Sigp)
-    LSigpInv = solve_triangular(LSigp, np.eye(LSigp.shape[0]), lower=True, overwrite_b=True, check_finite=False)
-
-    # create tangent space for well-tuned Hilbert coreset alg
-    print('Creating tuned projector for Hilbert coreset construction')
-    muHat, LSigHat, LSigHatInv = get_laplace(np.ones(Z.shape[0]), Z, np.zeros(X.shape[1]), model, diag=False)
-    sampler_optimal = lambda n, w, pts: (muHat + np.random.randn(n, muHat.shape[0]).dot(LSigHat.T), muHat, LSigHat)
-    prj_optimal = bc.BlackBoxProjector(sampler_optimal, arguments.proj_dim, model.log_likelihood,
-                                       model.grad_z_log_likelihood)
-
-    # create tangent space for poorly-tuned Hilbert coreset alg
-    print('Creating untuned projector for Hilbert coreset construction')
-    Zhat = Z[np.random.randint(0, Z.shape[0], int(np.sqrt(Z.shape[0]))), :]
-    muHat2, LSigHat2, LSigHat2Inv = get_laplace(np.ones(Zhat.shape[0]), Zhat, np.zeros(X.shape[1]), model,
-                                                diag=False)
-    sampler_realistic = lambda n, w, pts: (muHat2 + np.random.randn(n, muHat2.shape[0]).dot(LSigHat2.T), muHat2,
-                                           LSigHat2)
-    prj_realistic = bc.BlackBoxProjector(sampler_realistic, arguments.proj_dim, model.log_likelihood,
-                                         model.grad_z_log_likelihood)
-
-    print('Creating black box projector')
-
-    def sampler_w(n, wts, pts):
-        if wts is None or pts is None or pts.shape[0] == 0:
-            muw = mu0
-            LSigw = LSig0
-        else:
-            muw, LSigw, _ = get_laplace(wts, pts, np.zeros(X.shape[1]), model, diag=False)
-        return muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T), muw, LSigw
-
-    prj_bb = bc.BlackBoxProjector(sampler_w, arguments.proj_dim, model.log_likelihood, model.grad_z_log_likelihood)
-
-    print('Creating black box projector for recursive Hilbert coreset construction')
-
-
-    # Define projector with Laplace sampling from coreset posterior
-    def sampler_IS_Laplace(n, data, data_rec, wts, idcs, pts, temp, temp_rec):
-        # Sample from pi_w
-        if wts is None or pts is None or pts.shape[0] == 0:
-            muw = mu0
-            LSigw = LSig0
-
-            return muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T), np.ones(n)
-
-        muw, LSigw, _ = get_laplace(wts, pts, np.zeros(X.shape[1]), model, diag=False)
-
-        ess_max = 0
-        for ess_i in range(1):
-            theta = muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T)
-
-            ## Reweight
-
-            # Calculate IS weights eta
-            Zw_target = data
-            ww_target = temp * np.ones(data.shape[0])
-            Zw_prop = pts[wts > 0]
-            ww_prop = temp_rec * wts[wts > 0]
-
-            eta = np.exp(model.log_joint(Zw_target, theta, ww_target) -
-                         model.log_joint(Zw_prop, theta, ww_prop) - np.max(model.log_joint(Zw_target, theta, ww_target) -
-                         model.log_joint(Zw_prop, theta, ww_prop)))
-
-            # TODO: Add something here to catch inf/nan etas
-            theta_out = theta
-            eta_out = eta
-            ## Recenter
-
-            # Use the sample to estimate the proposal and target posterior means
-            mu_hat_prop = np.mean(theta, 0)
-            mu_hat_target_recentered_rescaled = np.dot(eta, theta) / np.sum(eta)
-
-            # Iteratively improve the mean:
-            theta_recentered_rescaled = theta
-            eta_recentered_rescaled = eta
-
-            # TODO: number of recentering steps currently hardcoded
-            if data_rec.shape[0] > 2*data_rec.shape[1]:
-                for _ in range(20):
-                    # Use the posterior mean estimates to rescale and recenter the samples
-                    theta_recentered_rescaled = \
-                        np.sqrt((temp_rec * data_rec.shape[0]) / (temp * data.shape[0])) * (theta - mu_hat_prop) + \
-                        mu_hat_target_recentered_rescaled
-
-                    # Calculate the modified weights
-                    eta_recentered_rescaled = np.exp(model.log_joint(Zw_target, theta_recentered_rescaled, ww_target) -
-                                                     model.log_joint(Zw_prop, theta, ww_prop) - np.max(
-                        model.log_joint(Zw_target, theta_recentered_rescaled, ww_target) -
-                        model.log_joint(Zw_prop, theta, ww_prop)))
-
-                    # Update the posterior mean
-                    mu_hat_target_recentered_rescaled = \
-                        np.dot(eta_recentered_rescaled, theta_recentered_rescaled) / np.sum(eta_recentered_rescaled)
-
-            ess_new = sum(eta_recentered_rescaled) ** 2 / sum(eta_recentered_rescaled ** 2)
-
-            if ess_new > ess_max:
-                ess_max = ess_new
-
-                theta_out = theta_recentered_rescaled
-                eta_out = eta_recentered_rescaled / sum(eta_recentered_rescaled)
-
-            if ess_max > n / 2:
-                break
-
-        print('{} tries'.format(ess_i + 1))
-        print(sum(eta_out) ** 2 / sum(eta_out ** 2))
-        print('Un-rescaled ESS: {}'.format(sum(eta) ** 2 / sum(eta ** 2)))
-
-
-        return theta_out, eta_out / sum(eta_out)
-
-    prj_rec = bc.ImportanceSamplingProjector(sampler_IS_Laplace, arguments.proj_dim, model.log_likelihood,
-                                             model.grad_z_log_likelihood)
-
-    # Define projector with MCMC sampling from coreset posterior
-
-    def sampler_IS_MCMC_RW(n, samples, is_weights, data, data_rec, wts, idcs, pts, ptsX, ptsY, temp, temp_rec):
-        if wts is None or pts is None or pts.shape[0] == 0:
-            muw = mu0
-            LSigw = LSig0
-
-            return muw + np.random.randn(n, muw.shape[0]).dot(LSigw.T), np.ones(n)
-
-        ess_max = 0
-        for ess_i in range(1):
-            # If the previous sample already has a "good enough" ESS, don't need to resample:
-            theta_old = samples
-            # Reweight old samples cf new target
-            Zw_target = data
-            ww_target = temp * np.ones(data.shape[0])
-            Zw_target_rec = data_rec
-            ww_target_rec = temp_rec * np.ones(data_rec.shape[0])
-            Zw_prop = pts[wts > 0]
-            ww_prop = temp_rec * wts[wts > 0]
-
-            eta_old = is_weights*np.exp(model.log_joint(Zw_target, theta_old, ww_target) -
-                                        model.log_joint(Zw_target_rec, theta_old, ww_target_rec) - np.max(
-                model.log_joint(Zw_target, theta_old, ww_target) -
-                model.log_joint(Zw_target_rec, theta_old, ww_target_rec)))
-
-            if sum(eta_old ** 2) == 0:
-                ess_old = 1.0
-            else:
-                ess_old = sum(eta_old) ** 2 / sum(eta_old ** 2)
-            print('Old ESS:')
-            print(ess_old)
-
-            if ess_old < 0.1*n:
-                # If the ESS is too low (<10% of full sample size) sample from pi_w
-                # Use MCMC on the coreset, measure time taken
-                # TODO: set initialization point
-                stanY = np.zeros(idcs.shape[0])
-                stanY[:] = ptsY
-                stanY[stanY == -1] = 0
-                sampler_data = {'x': ptsX, 'y': stanY.astype(int), 'w': wts, 'd': ptsX.shape[1], 'n': idcs.shape[0]}
-                # cst_samples, _ = mcmc.run(sampler_data, n, arguments.model, model.stan_representation, arguments.trial)
-                cst_samples, _ = mcmc.run(sampler_data, n, arguments.model, model.stan_representation, arguments.trial, init=[{"theta": samples[-1,:]}])
-                theta = cst_samples['theta'].T
-                ## Reweight
-
-                # Calculate IS weights eta
-                Zw_target = data
-                ww_target = temp * np.ones(data.shape[0])
-                Zw_prop = pts[wts > 0]
-                ww_prop = temp_rec * wts[wts > 0]
-
-                eta = np.exp(model.log_joint(Zw_target, theta, ww_target) -
-                             model.log_joint(Zw_prop, theta, ww_prop) - np.max(
-                    model.log_joint(Zw_target, theta, ww_target) -
-                    model.log_joint(Zw_prop, theta, ww_prop)))
-            else:
-                # otherwise, just use the old sample
-                theta = theta_old
-                eta = eta_old
-
-            theta_out = theta
-            eta_out = eta
-            ## Recenter
-
-            # Use the sample to estimate the proposal and target posterior means
-            mu_hat_prop = np.mean(theta, 0)
-            mu_hat_target_recentered_rescaled = np.dot(eta, theta) / np.sum(eta)
-
-            # Iteratively improve the mean:
-            theta_recentered_rescaled = theta
-            eta_recentered_rescaled = eta
-            # TODO: number of recentering steps currently hardcoded
-            if data_rec.shape[0] > 2*data_rec.shape[1]:
-                for _ in range(20):
-                    # Use the posterior mean estimates to rescale and recenter the samples
-                    theta_recentered_rescaled = \
-                        np.sqrt((temp_rec * data_rec.shape[0]) / (temp * data.shape[0])) * (theta - mu_hat_prop) + \
-                        mu_hat_target_recentered_rescaled
-
-                    # Calculate the modified weights
-                    eta_recentered_rescaled = np.exp(model.log_joint(Zw_target, theta_recentered_rescaled, ww_target) -
-                                                     model.log_joint(Zw_prop, theta, ww_prop) - np.max(
-                        model.log_joint(Zw_target, theta_recentered_rescaled, ww_target) -
-                        model.log_joint(Zw_prop, theta, ww_prop)))
-
-                    # Update the posterior mean
-                    mu_hat_target_recentered_rescaled = \
-                        np.dot(eta_recentered_rescaled, theta_recentered_rescaled) / np.sum(eta_recentered_rescaled)
-
-            ess_new = sum(eta_recentered_rescaled) ** 2 / sum(eta_recentered_rescaled ** 2)
-
-            if ess_new > ess_max:
-                ess_max = ess_new
-
-                theta_out = theta_recentered_rescaled
-                eta_out = eta_recentered_rescaled / sum(eta_recentered_rescaled)
-
-            if ess_max > n / 2:
-                break
-
-        print('{} tries'.format(ess_i + 1))
-        print(sum(eta_out) ** 2 / sum(eta_out ** 2))
-        print('Un-rescaled ESS: {}'.format(sum(eta) ** 2 / sum(eta ** 2)))
-
-
-        return theta_out, eta_out / sum(eta_out)
-
-    prj_rec_mcmc_rw = bc.ImportanceSamplingMCMCProjector(sampler_IS_MCMC_RW, arguments.proj_dim, model.log_likelihood,
-                                                      model.grad_z_log_likelihood)
 
     #######################################
     #######################################
@@ -384,94 +129,75 @@ def run(arguments):
     #######################################
     #######################################
 
-    print('Creating coreset construction objects')
+    print('Creating coreset construction objects ' + log_suffix)
     # create coreset construction objects
-    sparsevi = bc.SparseVICoreset(Z, prj_bb, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.ApproxNewtonCoreset(Z, prj_bb, opt_itrs=arguments.opt_itrs,
-                                    step_sched=eval(arguments.step_sched),
-                                    posterior_mean=mup,posterior_Lsiginv=LSigpInv)
-    giga_recursive = bc.RecursiveHilbertCoreset(Z, prj_rec, r_subsample_prob=0.5)
-    giga_recursive_mcmc = bc.RecursiveHilbertCoresetMCMC(Z, prj_rec_mcmc_rw, r_subsample_prob=0.5, dataX=X, dataY=Y)
-    giga_optimal = bc.HilbertCoreset(Z, prj_optimal)
-    giga_realistic = bc.HilbertCoreset(Z, prj_realistic)
+    projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
+                                                model.grad_z_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
+    giga = bc.HilbertCoreset(Z, projector)
+    sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
+    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
+                                    step_sched=eval(arguments.step_sched))
+    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
+				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
+                                    np.zeros(Z.shape[1]),
+				    hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
 
-    algs = {'SVI': sparsevi,
-            'ANC': newton,
-            'GIGA-REC': giga_recursive,
-            'GIGA-REC-MCMC': giga_recursive_mcmc,
-            'GIGA-OPT': giga_optimal,
-            'GIGA-REAL': giga_realistic,
+    algs = {'SVI' : sparsevi,
+            'QNC' : newton,
+            'LAP' : lapl,
+            'GIGA': giga,
             'UNIF': unif}
     alg = algs[arguments.alg]
 
-    cputs = np.zeros(Ms.shape[0])
-    mcmc_time_per_itr = np.zeros(Ms.shape[0])
-    csizes = np.zeros(Ms.shape[0])
-    Fs = np.zeros(Ms.shape[0])
-    rklw = np.zeros(Ms.shape[0])
-    fklw = np.zeros(Ms.shape[0])
-    mu_errs = np.zeros(Ms.shape[0])
-    Sig_errs = np.zeros(Ms.shape[0])
 
-    print('Running coreset construction / MCMC for ' + arguments.dataset + ' ' + arguments.alg + ' ' + str(
-        arguments.trial))
-    t_alg = 0.
-    for m in range(Ms.shape[0]):
-        print('M = ' + str(Ms[m]) + ': coreset construction, ' + arguments.alg + ' ' + arguments.dataset + ' ' + str(
-            arguments.trial))
-        # Recursive alg needs to be run fully each time
-        if alg == giga_recursive or alg == giga_recursive_mcmc:
-            t0 = time.process_time()
-            itrs = Ms[m]
-            alg.build(itrs)
-            t_alg = time.process_time() - t0
-        else:
-            # this runs alg up to a level of M; on the next iteration, it will continue from where it left off
-            t0 = time.process_time()
-            itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m - 1])
-            alg.build(itrs)
-            t_alg += time.process_time() - t0
+    print('Building ' + log_suffix)
+    # Recursive alg needs to be run fully each time
+    t0 = time.perf_counter()
+    alg.build(arguments.coreset_size)
+    t_build = time.perf_counter() - t0
+
+
+    print('Sampling ' + log_suffix)
+
+    __get = getattr(alg, "get", None)
+    if callable(__get):
         wts, pts, idcs = alg.get()
-        # wts, pts, idcs = alg.get_neg_weights()
-
-        print('M = ' + str(Ms[m]) + ': MCMC')
         # Use MCMC on the coreset, measure time taken
-        stanY = np.zeros(idcs.shape[0])
-        stanY[:] = Y[idcs]
-        stanY[stanY == -1] = 0
-        sampler_data = {'x': X[idcs, :], 'y': stanY.astype(int), 'w': wts, 'd': X.shape[1], 'n': idcs.shape[0]}
-        cst_samples, t_cst_mcmc = mcmc.run(sampler_data, arguments.mcmc_samples_coreset, arguments.model,
-                                           model.stan_representation, arguments.trial)
-        cst_samples = cst_samples['theta'].T
-        # TODO see note above re: full mcmc sampling
-        t_cst_mcmc_per_step = t_cst_mcmc / (arguments.mcmc_samples_coreset * 2)
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+    else:
+        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
 
-        print('M = ' + str(Ms[m]) + ': Approximating posterior with Gaussian')
-        muw = cst_samples.mean(axis=0)
-        Sigw = np.cov(cst_samples, rowvar=False)
-        LSigw = np.linalg.cholesky(Sigw)
-        LSigwInv = solve_triangular(LSigw, np.eye(LSigw.shape[0]), lower=True, overwrite_b=True, check_finite=False)
 
-        print('M = ' + str(Ms[m]) + ': Computing metrics')
-        cputs[m] = t_alg
-        mcmc_time_per_itr[m] = t_cst_mcmc_per_step
-        csizes[m] = (wts > 0).sum()
-        # csizes[m] = (wts != 0).sum()
+    print('Evaluation ' + log_suffix)
+    # get full/approx posterior mean/covariance
+    mu_approx = approx_samples.mean(axis=0)
+    Sig_approx = np.cov(approx_samples, rowvar=False)
+    LSig_approx = np.linalg.cholesky(Sig_approx)
+    LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    mu_full = full_samples.mean(axis=0)
+    Sig_full = np.cov(full_samples, rowvar=False)
+    LSig_full = np.linalg.cholesky(Sig_full)
+    LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    # compute the relative 2 norm error for mean and covariance
+    mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
+    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
+    # compute gaussian reverse/forward KL
+    rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
+    fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
+    # compute stein discrepancies
+    # note: we evaluate the grad log p under the full posterior for both sample sets
+    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
+    scores_full = model.grad_th_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig0)
+    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
+    imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
 
-        gcs = np.array(
-            [model.grad_th_log_joint(Z[idcs, :], full_samples[i, :], wts) for i in range(full_samples.shape[0])])
-        gfs = np.array(
-            [model.grad_th_log_joint(Z, full_samples[i, :], np.ones(Z.shape[0])) for i in range(full_samples.shape[0])])
-        Fs[m] = (((gcs - gfs) ** 2).sum(axis=1)).mean()
-        rklw[m] = KL(muw, Sigw, mup, LSigpInv.T.dot(LSigpInv))
-        print("Reverse_KL = {}".format(rklw[m]))
-        fklw[m] = KL(mup, Sigp, muw, LSigwInv.T.dot(LSigwInv))
-        mu_errs[m] = np.sqrt(((mup - muw) ** 2).sum()) / np.sqrt((mup ** 2).sum())
-        Sig_errs[m] = np.sqrt(((Sigp - Sigw) ** 2).sum()) / np.sqrt((Sigp ** 2).sum())
 
-    results.save(arguments, csizes=csizes, Ms=Ms, cputs=cputs, Fs=Fs, full_mcmc_time_per_itr=full_mcmc_time_per_itr,
-                 mcmc_time_per_itr=mcmc_time_per_itr, rklw=rklw, fklw=fklw, mu_errs=mu_errs, Sig_errs=Sig_errs)
+    print('Saving ' + log_suffix)
+    results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
+    print('')
+    print('')
 
 
 ############################
@@ -487,24 +213,18 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--model', type=str, default="poiss", choices=["lr", "poiss"],
+parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="synth_poiss_large",
-                    help="The name of the dataset")  # examples: synth_lr, phishing, ds1, synth_poiss, biketrips, airportdelays, synth_poiss_large, biketrips_large, airportdelays_large
-parser.add_argument('--alg', type=str, default='GIGA-OPT',
-                    choices=['SVI', 'ANC', 'GIGA-REC', 'GIGA-REC-MCMC', 'GIGA-REC-NR', 'GIGA-REC-MCMC-NR', 'GIGA-OPT', 'GIGA-REAL', 'UNIF'],
+parser.add_argument('--dataset', type=str, default="synth_lr_cauchy",
+                    help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
+parser.add_argument('--alg', type=str, default='GIGA',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--mcmc_samples_full", type=int, default=1000,
-                    help="number of MCMC samples to take for inference on the full dataset (also take this many warmup steps before sampling)")
-parser.add_argument("--mcmc_samples_coreset", type=int, default=1000,
-                    help="number of MCMC samples to take for inference on the coreset (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=500,
-                    help="The number of samples taken when discretizing log likelihoods for these experiments")
-
-parser.add_argument('--coreset_size_max', type=int, default=4999, help="The maximum coreset size to evaluate")
-parser.add_argument('--coreset_num_sizes', type=int, default=12, help="The number of coreset sizes to evaluate")
-parser.add_argument('--coreset_size_spacing', type=str, choices=['log', 'linear'], default='log',
-                    help="The spacing of coreset sizes to test")
+parser.add_argument("--samples_inference", type=int, default=1000,
+                    help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
+parser.add_argument("--proj_dim", type=int, default=2000,
+                    help="The number of samples taken when discretizing log likelihoods")
+parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for methods that use iterative weight refinement)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
@@ -534,8 +254,6 @@ plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter']
                             help="Type of plot to make")
 plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
-plot_subparser.add_argument('--summarize', type=str, nargs='*',
-                            help='The command line arguments to ignore value of when matching to plot a subset of data. E.g. --summarize trial data_num will compute result statistics over both trial and number of datapoints')
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
