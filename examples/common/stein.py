@@ -1,6 +1,5 @@
-# The below stein kernel functions were taken from:
+# The below stein kernel functions were modified using the following code as a base:
 # https://github.com/pierreablin/ksddescent/blob/main/ksddescent/kernels.py
-# with minor modifications to convert pytorch code to numpy code
 # under the following license:
 
 # MIT License
@@ -27,68 +26,74 @@
 
 import numpy as np
 
+def gauss_mmd(x, y, sigma=1):
+    d = x.shape[1]
 
-def gaussian_stein_discrepancy(x, y, scores_x, scores_y, sigma=1):
-    """Compute the Gaussian Stein discrepancy between x and y
-    Parameters
-    ----------
-    x : numpy array, shape (n, p)
-        Input particles
-    y : numpy array, shape (n, p)
-        Input particles
-    score_x : numpy array, shape (n, p)
-        The score of x
-    score_y : numpy array, shape (n, p)
-        The score of y
-    sigma : float
-        Bandwidth
-    Return
-    ------
-    the stein discrepancy V statistic estimate
-    """
+    # K(X,X)
+    xx_diffs = x[:, np.newaxis, :] - x[np.newaxis, :, :]
+    xx_sq_dists = (xx_diffs**2).sum(axis=2)
+    kernel_xx = np.exp(-xx_sq_dists/(2.*sigma**2))
+
+    # K(Y,Y)
+    yy_diffs = y[:, np.newaxis, :] - y[np.newaxis, :, :]
+    yy_sq_dists = (yy_diffs**2).sum(axis=2)
+    kernel_yy = np.exp(-yy_sq_dists/(2.*sigma**2))
+
+    # K(X, Y)
+    xy_diffs = x[:, np.newaxis, :] - y[np.newaxis, :, :]
+    xy_sq_dists = (xy_diffs**2).sum(axis=2)
+    kernel_xy = np.exp(-xy_sq_dists/(2.*sigma**2))
+
+    # sum K(X,X)/N^2 + sum K(Y,Y)/M^2 - 2 sum K(X,Y)/(M*N)
+    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/x.shape[0]*y.shape[0]
+
+def imq_mmd(x, y, sigma=1, beta=0.5):
+    d = x.shape[1]
+
+    # K(X,X)
+    xx_diffs = x[:, np.newaxis, :] - x[np.newaxis, :, :]
+    xx_sq_dists = (xx_diffs**2).sum(axis=2)
+    kernel_xx = 1./(xx_sq_dists/(2.*sigma**2) + 1.)**beta
+
+    # K(Y,Y)
+    yy_diffs = y[:, np.newaxis, :] - y[np.newaxis, :, :]
+    yy_sq_dists = (yy_diffs**2).sum(axis=2)
+    kernel_yy = 1./(yy_sq_dists/(2.*sigma**2) + 1.)**beta
+
+    # K(X, Y)
+    xy_diffs = x[:, np.newaxis, :] - y[np.newaxis, :, :]
+    xy_sq_dists = (xy_diffs**2).sum(axis=2)
+    kernel_xy = 1./(xy_sq_dists/(2.*sigma**2) + 1.)**beta
+
+    # sum K(X,X)/N^2 + sum K(Y,Y)/M^2 - 2 sum K(X,Y)/(M*N)
+    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/x.shape[0]*y.shape[0]
+
+
+def gauss_stein(x, scores, sigma=1):
     _, p = x.shape
-    d = x[:, None, :] - y[None, :, :]
+    d = x[:, None, :] - x[None, :, :]
     dists = (d ** 2).sum(axis=-1)
-    k = np.exp(-dists / sigma / 2)
-    scalars = scores_x.dot(scores_y.T)
-    scores_diffs = scores_x[:, None, :] - scores_y[None, :, :]
+    k = np.exp(-dists / sigma**2 / 2)
+    scalars = scores.dot(scores.T)
+    scores_diffs = scores[:, None, :] - scores[None, :, :]
     diffs = (d * scores_diffs).sum(axis=-1)
-    der2 = p - dists / sigma
-    stein_kernel = k * (scalars + diffs / sigma + der2 / sigma)
+    der2 = p - dists / sigma**2
+    stein_kernel = k * (scalars + diffs / sigma**2 + der2 / sigma**2)
     return stein_kernel.sum()/(x.shape[0]*y.shape[0])
 
 
-def imq_stein_discrepancy(x, y, score_x, score_y, g=1, beta=0.5):
-    """Compute the IMQ Stein kernel between x and y
-    Parameters
-    ----------
-    x : numpy array, shape (n, p)
-        Input particles
-    y : numpy array, shape (n, p)
-        Input particles
-    score_x : numpy array, shape (n, p)
-        The score of x
-    score_y : numpy array, shape (n, p)
-        The score of y
-    g : float
-        Bandwidth
-    beta : float
-        Power of the kernel
-    Return
-    ------
-    the stein discrepancy V statistic estimate
-    """
+def imq_stein(x, scores, sigma=1, beta=0.5):
     _, p = x.shape
-    d = x[:, None, :] - y[None, :, :]
+    d = x[:, None, :] - x[None, :, :]
     dists = (d ** 2).sum(axis=-1)
-    res = 1 + g * dists
+    res = 1 + dists /(2.*sigma**2)
     kxy = res ** (-beta)
-    scores_d = score_x[:, None, :] - score_y[None, :, :]
+    scores_d = scores[:, None, :] - scores[None, :, :]
     temp = d * scores_d
-    dkxy = 2 * beta * g * (res) ** (-beta - 1) * temp.sum(axis=-1)
+    dkxy = 2 * beta /(2.*sigma**2) * (res) ** (-beta - 1) * temp.sum(axis=-1)
     d2kxy = 2 * (
-        beta * g * (res) ** (-beta - 1) * p
-        - 2 * beta * (beta + 1) * g ** 2 * dists * res ** (-beta - 2)
+        beta / (2.*sigma**2) * (res) ** (-beta - 1) * p
+        - 2 * beta * (beta + 1) /(2.*sigma**2)** 2 * dists * res ** (-beta - 2)
     )
     k_pi = score_x.dot(score_y.T) * kxy + dkxy + d2kxy
     return k_pi.sum()/(x.shape[0]*y.shape[0])
