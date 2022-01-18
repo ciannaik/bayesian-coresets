@@ -121,7 +121,7 @@ parameters {
 }
 model {
   for(i in 1:d){
-    theta[i] ~ cauchy(0, 2);
+    theta[i] ~ cauchy(0, sig0);
   }
   for(i in 1:n){
     target +=  bernoulli_logit_lupmf(y[i] | x[i]*theta) * w[i];

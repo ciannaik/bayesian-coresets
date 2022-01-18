@@ -108,7 +108,7 @@ def run(arguments):
         full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
         if not os.path.exists('full_cache'):
             os.mkdir('full_cache')
-        np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
+        # np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
 
     #######################################
     #######################################
@@ -121,7 +121,8 @@ def run(arguments):
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     unif = bc.UniformSamplingCoreset(X)
     giga = bc.HilbertCoreset(X, projector)
-    sparsevi = bc.SparseVICoreset(X, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
+    sparsevi = bc.SparseVICoreset(X, projector, n_subsample_select=1000, n_subsample_opt=1000,
+                                  opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.newton_opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
@@ -200,16 +201,16 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--data_num', type=int, default='1000', help='Dataset size/number of examples')
-parser.add_argument('--data_dim', type=int, default = '10', help="The dimension of the multivariate normal distribution to use for this experiment")
+parser.add_argument('--data_num', type=int, default='10000', help='Dataset size/number of examples')
+parser.add_argument('--data_dim', type=int, default = '50', help="The dimension of the multivariate normal distribution to use for this experiment")
 parser.add_argument('--alg', type=str, default='QNC',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=2000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=100,
+parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=50, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=200, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
