@@ -26,7 +26,7 @@ def log_joint(z, th, w, sig, mu0, sig0):
     return (w[:,np.newaxis]*log_likelihood(z, th, sig)).sum(axis=0) + log_prior(th, mu0, sig0)
 
 def grad_log_joint(z, th, w, sig, mu0, sig0):
-    return (w[:,np.newaxis]*grad_log_likelihood(z, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
+    return (w[:,np.newaxis,np.newaxis]*grad_log_likelihood(z, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
 
 def hess_log_joint(z, th, w, sig, mu0, sig0):
     z = np.atleast_2d(z)
@@ -34,6 +34,19 @@ def hess_log_joint(z, th, w, sig, mu0, sig0):
     x = z[:, :-1]
     y = z[:, -1]
     return -(w*x.T).dot(x)/sig**2 - np.eye(x.shape[1])/sig0**2
+
+def weighted_post_sampler(n, z, w, sig, mu0, sig0):
+    x = z[:, :-1]
+    y = z[:, -1]
+    if w.shape[0] > 0:
+        SigpInv = np.eye(x.shape[1])/sig0**2 + (w*x.T).dot(x)/sig**2
+        LSigpInv = np.linalg.cholesky(SigpInv)
+        USigp = sl.solve_triangular(LSigpInv, np.eye(LSigpInv.shape[0]), lower=True, overwrite_b=True, check_finite=False).T # Sigp = UU^T, U upper tri
+        mup = (USigp.dot(USigp.T)).dot(mu0*np.ones(x.shape[1])/sig0**2 + (w[:,np.newaxis]*y[:,np.newaxis]*x).sum(axis=0)/sig**2)
+    else:
+        mup = mu0*np.ones(x.shape[1])
+        USigp = sig0*np.eye(x.shape[1])
+    return mup + USigp.dot(np.random.randn(x.shape[1], n)).T
 
 stan_code = """
 data {

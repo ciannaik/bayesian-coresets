@@ -28,7 +28,7 @@ def plot(arguments):
 
 def run(arguments):
     # suffix for printouts
-    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', numdata: ' + str(arguments.data_num) + ', dimdata: ' + str(arguments.data_dim) + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
+    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', numdata: ' + str(arguments.data_num) + ', nbases: ' + str(arguments.n_bases_per_scale) + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
 
     #######################################
     #######################################
@@ -55,20 +55,20 @@ def run(arguments):
     #each row of x is [lat, lon, price]
     print('Loading data')
 
-    X = np.load('../data/prices2018.npy')
-    print('dataset size : ', x.shape)
+    data = np.load('../data/prices2018.npy')
+    print('dataset size : ', data.shape)
 
     print('Subsampling down to '+str(arguments.data_num) + ' points')
-    idcs = np.arange(x.shape[0])
+    idcs = np.arange(data.shape[0])
     np.random.shuffle(idcs)
-    X = X[idcs[:arguments.data_num], :]
+    data = data[idcs[:arguments.data_num], :]
 
     #log transform the prices
-    X[:, 2] = np.log10(X[:, 2])
+    data[:, 2] = np.log10(data[:, 2])
 
     #get empirical mean/std
-    datastd = X[:,2].std()
-    datamn = X[:,2].mean()
+    datastd = data[:,2].std()
+    datamn = data[:,2].mean()
 
     #bases of increasing size; the last one is effectively a constant
     basis_unique_scales = np.array([.2, .4, .8, 1.2, 1.6, 2., 100])
@@ -85,15 +85,15 @@ def run(arguments):
     basis_locs = np.zeros((0,2))
     for i in range(basis_unique_scales.shape[0]):
       basis_scales = np.hstack((basis_scales, basis_unique_scales[i]*np.ones(basis_unique_counts[i])))
-      idcs = np.random.choice(np.arange(X.shape[0]), replace=False, size=basis_unique_counts[i])
-      basis_locs = np.vstack((basis_locs, X[idcs, :2]))
+      idcs = np.random.choice(np.arange(data.shape[0]), replace=False, size=basis_unique_counts[i])
+      basis_locs = np.vstack((basis_locs, data[idcs, :2]))
 
     print('Converting bases and observations into X/Y matrices')
     #convert basis functions + observed data locations into a big X matrix
-    X = np.zeros((X.shape[0], basis_scales.shape[0]))
+    X = np.zeros((data.shape[0], basis_scales.shape[0]))
     for i in range(basis_scales.shape[0]):
-      X[:, i] = np.exp( -((X[:, :2] - basis_locs[i, :])**2).sum(axis=1) / (2*basis_scales[i]**2) )
-    Y = X[:, 2]
+      X[:, i] = np.exp( -((data[:, :2] - basis_locs[i, :])**2).sum(axis=1) / (2*basis_scales[i]**2) )
+    Y = data[:, 2]
     Z = np.hstack((X, Y[:,np.newaxis]))
 
     #######################################
@@ -118,20 +118,32 @@ def run(arguments):
 
     print('Creating weighted sampler ' + log_suffix)
     def sample_w(n, wts, pts, get_timing=False):
-        # passing in X, Y into the stan sampler
-        # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
+        t0 = time.perf_counter()
         if pts.shape[0] > 0:
-            sampler_data = {'x': pts[:, :-1], 'y': pts[:, -1], 'w': wts,
-                            'd': pts.shape[1]-1, 'n': pts.shape[0], 'mu0': mu0, 'sig0': sig0, 'sig': sig}
+            samples = model.weighted_post_sampler(n, pts, wts, sig, mu0, sig0)
         else:
-            sampler_data = {'x': np.zeros((1, X.shape[1])), 'y': np.zeros(1), 'w': np.zeros(1),
-                            'd': pts.shape[1]-1, 'n': 1, 'mu0': mu0, 'sig0': sig0, 'sig': sig}
-        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
-                                                            model.stan_code, arguments.trial)
+            samples = model.weighted_post_sampler(n, np.zeros((1, Z.shape[1])), np.zeros(1), sig, mu0, sig0)
+        t_tot = time.perf_counter()-t0
         if get_timing:
-            return samples['theta'].T, t_mcmc, t_mcmc_per_itr
+            return samples, t_tot, t_tot/n
         else:
-            return samples['theta'].T
+            return samples
+
+    #def sample_w(n, wts, pts, get_timing=False):
+    #    # passing in X, Y into the stan sampler
+    #    # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
+    #    if pts.shape[0] > 0:
+    #        sampler_data = {'x': pts[:, :-1], 'y': pts[:, -1], 'w': wts,
+    #                        'd': X.shape[1], 'n': pts.shape[0], 'mu0': mu0, 'sig0': sig0, 'sig': sig}
+    #    else:
+    #        sampler_data = {'x': np.zeros((1, X.shape[1])), 'y': np.zeros(1), 'w': np.zeros(1),
+    #                        'd': X.shape[1], 'n': 1, 'mu0': mu0, 'sig0': sig0, 'sig': sig}
+    #    samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, 'linear_regression',
+    #                                                        model.stan_code, arguments.trial)
+    #    if get_timing:
+    #        return samples['theta'].T, t_mcmc, t_mcmc_per_itr
+    #    else:
+    #        return samples['theta'].T
 
     #######################################
     #######################################
@@ -148,7 +160,7 @@ def run(arguments):
         t_full_per_itr = float(tmp__['t'])
     else:
         print('Cache doesn\'t exist, running sampler')
-        full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
+        full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
         if not os.path.exists('full_cache'):
             os.mkdir('full_cache')
         np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
@@ -168,9 +180,9 @@ def run(arguments):
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched))
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0],
-				    lambda th : model.grad_log_joint(X, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
-                                    np.zeros(Z.shape[1]),
-				    hess_log_joint = lambda th : model.hess_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:])
+				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
+                                    np.zeros(X.shape[1]),
+				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:])
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -216,8 +228,8 @@ def run(arguments):
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute stein discrepancies
     # note: we evaluate the grad log p under the full posterior for both sample sets
-    scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    scores_full = model.grad_log_joint(X, full_samples, np.ones(X.shape[0]), sig, mu0, sig0)
+    scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig, mu0, sig0)
+    scores_full = model.grad_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig, mu0, sig0)
     gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
     imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
 

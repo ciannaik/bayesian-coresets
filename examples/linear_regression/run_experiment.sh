@@ -6,7 +6,7 @@ do
     do
     	for M in 10 50 100
     	do
-			python3 main.py --data_num 500 --coreset_size $M --alg $alg --trial $ID run
+			python3 main.py --data_num 500 --n_bases_per_scale 50 --coreset_size $M --alg $alg --trial $ID run
 		done
 	done
 done

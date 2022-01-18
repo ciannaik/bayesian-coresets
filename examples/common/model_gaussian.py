@@ -45,7 +45,7 @@ def weighted_post(mu0, sig0, sig, x, w):
   if w.shape[0] > 0:
     mup = sigp**2*(mu0/sig0**2 + (w[:,np.newaxis]*x).sum(axis=0)/sig**2)
   else:
-    mup = mu0
+    mup = mu0*np.ones(x.shape[1])
   return mup, sigp
 
 def KL(mu0, Sig0, mu1, Sig1inv):
