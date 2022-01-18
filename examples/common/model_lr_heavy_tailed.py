@@ -10,7 +10,7 @@ def load_data(dnm):
   X[:, :-1] = np.linalg.solve(np.linalg.cholesky(V), (X[:, :-1] - m).T).T
   Z = data['y'][:, np.newaxis]*X
   data.close()
-  return X, Y, Z, None, Z.shape[1]
+  return X, Y, Z, None
 
 def gen_synthetic(n, d_subspace, d_complement):
 
@@ -121,7 +121,7 @@ parameters {
 }
 model {
   for(i in 1:d){
-    theta[i] ~ cauchy(0, sig0);
+    theta[i] ~ cauchy(0, 2);
   }
   for(i in 1:n){
     target +=  bernoulli_logit_lupmf(y[i] | x[i]*theta) * w[i];

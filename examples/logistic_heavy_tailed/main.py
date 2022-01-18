@@ -58,9 +58,9 @@ def run(arguments):
     sig0 = 2
 
     # set the synthetic data params (if we're using synthetic data)
-    N_synth = 500
-    d_subspace = 1
-    d_complement = 1
+    N_synth = 10000
+    d_subspace = 3
+    d_complement = 3
 
     #######################################
     #######################################
@@ -69,8 +69,10 @@ def run(arguments):
     #######################################
 
     print('Loading/creating dataset ' + log_suffix)
-    if arguments.dataset == 'synth_lr_cauchy':
+    if arguments.dataset == 'synth_lr_cauchy_large_new':
         X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
+        dataset_filename = '../data/' + arguments.dataset + '.npz'
+        np.savez(dataset_filename, X=X, y=Y)
     else:
         X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
     stanY = np.zeros(Y.shape[0])
@@ -168,34 +170,49 @@ def run(arguments):
     else:
         approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
 
+    # approx_samples, _, _ = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
     mu_approx = approx_samples.mean(axis=0)
+    mu_approx_subspace = mu_approx[[i for i in range(d_subspace)] + [-1]]
     Sig_approx = np.cov(approx_samples, rowvar=False)
+    Sig_approx_subspace = Sig_approx[[i for i in range(d_subspace)] + [-1],:][:,[i for i in range(d_subspace)] + [-1]]
     LSig_approx = np.linalg.cholesky(Sig_approx)
+    LSig_approx_subspace = np.linalg.cholesky(Sig_approx_subspace)
     LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    LSigInv_approx_subspace = solve_triangular(LSig_approx_subspace, np.eye(LSig_approx_subspace.shape[0]), lower=True, overwrite_b=True, check_finite=False)
     mu_full = full_samples.mean(axis=0)
+    mu_full_subspace = mu_full[[i for i in range(d_subspace)] + [-1]]
     Sig_full = np.cov(full_samples, rowvar=False)
+    Sig_full_subspace = Sig_full[[i for i in range(d_subspace)] + [-1],:][:,[i for i in range(d_subspace)] + [-1]]
     LSig_full = np.linalg.cholesky(Sig_full)
+    LSig_full_subspace = np.linalg.cholesky(Sig_full_subspace)
     LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    LSigInv_full_subspace = solve_triangular(LSig_full_subspace, np.eye(LSig_full_subspace.shape[0]), lower=True, overwrite_b=True, check_finite=False)
     # compute the relative 2 norm error for mean and covariance
-    mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
+    mu_err = np.sqrt(((mu_full_subspace - mu_approx_subspace) ** 2).sum()) / np.sqrt((mu_full_subspace ** 2).sum())
+    mu_err_full = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
+
+    Sig_err = np.linalg.norm(Sig_approx_subspace - Sig_full_subspace, ord=2)/np.linalg.norm(Sig_full_subspace, ord=2)
+    Sig_err_full = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
     # compute gaussian reverse/forward KL
-    rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
+    rklw = KL(mu_approx_subspace, Sig_approx_subspace, mu_full_subspace, LSigInv_full_subspace.T.dot(LSigInv_full_subspace))
+    rklw_full = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute stein discrepancies
     # note: we evaluate the grad log p under the full posterior for both sample sets
     scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
     scores_full = model.grad_th_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig0)
-    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
+    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full, sigma=5)
+    gauss_stein = np.abs(gauss_stein) + 1e-10
     imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
-
+    imq_stein = np.abs(imq_stein) + 1e-10
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein,
+                 mu_err_full=mu_err_full, Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     print('')
     print('')
 
@@ -215,22 +232,22 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="synth_lr_cauchy",
+parser.add_argument('--dataset', type=str, default="synth_lr_cauchy_large",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='GIGA',
+parser.add_argument('--alg', type=str, default='QNC',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=500, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for methods that use iterative weight refinement)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=15,
+parser.add_argument('--trial', type=int, default=1,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")

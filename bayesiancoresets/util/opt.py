@@ -31,35 +31,65 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
 
 
 def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i+1)):
+  print("Performing Newton Optimization:")
+
   # Define starting point
   x = x0.copy()
+  # Use a line search to take a good initial step
+  print("Newton Step: 0")
+  g = search_direction(x)
+  g_u = grd(x)
+
+  print("a of gradient is: {}".format(np.dot(g_u, g)))
+
+  a=1.0
+  k=0.9
+  fail = 0
+  print("Optimizing step size:")
+  while np.all(x+a*g < 0):
+      a /= 1.5
+
+  for j in range(10):
+    test = np.dot(grd(np.maximum(x+a*g, 0.)),g)/np.dot(g_u,g)
+    print("test = {}".format(test))
+    if test >= k or test <= 0:
+      a = a/1.5
+    else:
+      upd = a*g
+      print("alpha = {}".format(a))
+      print("a = {}".format(np.dot(grd(np.maximum(x + a * g, 0.)), g)))
+      fail = 1
+      break
+
+  if fail == 0:
+    return x
+
+  x += upd
+  # project onto x>=0
+  x = np.maximum(x, 0.)
+  # Take the rest of the steps with step size 1
+  norm_grd_old = 0
   for i in range(20):
+    print("Newton Step: {}".format(i+1))
     g = search_direction(x)
-    # print("Norm of gradient is: {}".format(np.sqrt(np.sum(grd(x)**2))))
-    print("a of gradient is: {}".format(np.dot(grd(x),g)))
-
-    a=1.0
-    k=0.9
-    fail = 0
-
-    while np.any(x+a*g < 0):
-        a /= 1.5
-
-    for j in range(10):
-      test = np.dot(grd(x+a*g),g)/np.dot(grd(x),g)
-      # print("test = {}".format(test))
-      if test >= k or test <= 0:
-        a = a/1.5
-      else:
-        upd = a*g
-        # print("alpha = {}".format(a))
-        # print("a = {}".format(np.dot(grd(x + a * g), g)))
-        fail = 1
+    g_u = grd(x)
+    # Calculate relative difference between current and previous gradient estimate
+    norm_grd = np.sqrt(np.sum(g_u**2))
+    rel_g_u = (norm_grd_old - norm_grd)/norm_grd
+    if i == 0:
+        rel_g_u = 1
+    norm_grd_old = norm_grd
+    # Early stopping conditions:
+    # Small norm of gradient
+    if np.sqrt(np.sum(g_u**2)) <= 0.001:
+        break
+    # Small relative difference from previous gradient
+    if rel_g_u <= 0.1:
         break
 
-    if fail == 0:
-      break
-    x += upd
+    print("a of gradient is: {}".format(np.dot(g_u,g)))
+
+    x += g
     # project onto x>=0
     x = np.maximum(x, 0.)
 
