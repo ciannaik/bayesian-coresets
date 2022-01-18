@@ -52,15 +52,18 @@ def run(arguments):
     #######################################
 
     # import the model specification
-    import model_lr_heavy_tailed as model
+    import model_sparsereg as model
 
     # set the prior hyperparams
     sig0 = 2
+    a0 = 1
+    b0 = 1
 
     # set the synthetic data params (if we're using synthetic data)
-    N_synth = 500
-    d_subspace = 1
-    d_complement = 1
+    N_synth = 300
+    d_synth = 6
+    d_active = 2
+    sig = 1.
 
     #######################################
     #######################################
@@ -69,13 +72,12 @@ def run(arguments):
     #######################################
 
     print('Loading/creating dataset ' + log_suffix)
-    if arguments.dataset == 'synth_lr_cauchy':
-        X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
+    if arguments.dataset == 'synth_sparsereg':
+        X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
     else:
-        X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
-    stanY = np.zeros(Y.shape[0])
-    stanY[:] = Y
-    stanY[stanY == -1] = 0
+        raise NotImplementedError
+        #X, Y = model.load_data('../data/' + arguments.dataset + '.npz')
+    Z = np.hstack((X, Y[:,np.newaxis]))
 
     ####################################################################
     ####################################################################
@@ -88,19 +90,19 @@ def run(arguments):
         # passing in X, Y into the stan sampler
         # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
         if pts.shape[0] > 0:
-            sampler_data = {'x': pts, 'y': np.ones(pts.shape[0], dtype=np.int64), 'w': wts,
-                            'd': pts.shape[1], 'n': pts.shape[0], 'sig0' : sig0}
+            sampler_data = {'x': pts[:, :-1], 'y': pts[:, -1], 'w': wts,
+                            'd': X.shape[1], 'n': pts.shape[0], 'sig0': sig0, 'a0': a0, 'b0': b0}
         else:
-            sampler_data = {'x': np.zeros((1,Z.shape[1])), 'y': np.ones(1,dtype=np.int64), 'w': np.zeros(1),
-                            'd': Z.shape[1], 'n': 1, 'sig0' : sig0}
-        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, arguments.model,
+            sampler_data = {'x': np.zeros((1, X.shape[1])), 'y': np.zeros(1), 'w': np.zeros(1),
+                            'd': X.shape[1], 'n': 1, 'sig0': sig0, 'a0': a0, 'b0': b0}
+        _samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, 'sparse_regression',
                                                             model.stan_code, arguments.trial)
 
+        samples = np.hstack((_samples['theta'].T, _samples['lambda'].T, _samples['sig'].T, _samples['tau'].T))
         if get_timing:
-            return samples['theta'].T, t_mcmc, t_mcmc_per_itr
+            return samples, t_mcmc, t_mcmc_per_itr
         else:
-            return samples['theta'].T
-
+            return samples
 
     #######################################
     #######################################
@@ -109,7 +111,7 @@ def run(arguments):
     #######################################
 
     print('Checking for cached full MCMC samples ' + log_suffix)
-    mcmc_cache_filename = 'mcmc_cache/full_samples_' + arguments.model + '_' + arguments.dataset + '.npz'
+    mcmc_cache_filename = 'mcmc_cache/full_samples_' + str(N_synth) + '_' + str(d_synth) + '_' + str(d_active) + '_' + arguments.dataset + '.npz'
     if os.path.exists(mcmc_cache_filename):
         print('Cache exists, loading')
         tmp__ = np.load(mcmc_cache_filename)
@@ -132,16 +134,16 @@ def run(arguments):
     print('Creating coreset construction objects ' + log_suffix)
     # create coreset construction objects
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
-                                                model.grad_z_log_likelihood)
+                                                model.grad_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
                                     step_sched=eval(arguments.step_sched))
-    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
-				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
+    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
+				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:],
                                     np.zeros(Z.shape[1]),
-				    hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
+				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:,:])
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -187,8 +189,8 @@ def run(arguments):
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute stein discrepancies
     # note: we evaluate the grad log p under the full posterior for both sample sets
-    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
-    scores_full = model.grad_th_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig0)
+    scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0, a0, b0)
+    scores_full = model.grad_log_joint(Z, full_samples, np.ones(Z.shape[0]), sig0, a0, b0)
     gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
     imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
 
@@ -213,9 +215,7 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
-                    help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="synth_lr_cauchy",
+parser.add_argument('--dataset', type=str, default="synth_sparsereg",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='GIGA',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],

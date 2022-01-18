@@ -2,6 +2,15 @@ import numpy as np
 import scipy.linalg as sl
 from scipy.special import gammaln
 
+def gen_synthetic(n, d, d_active, sig):
+  th = np.random.randn(d)
+  idcs = np.arange(d)
+  np.random.shuffle(idcs)
+  th[idcs[d_active:]] = 0.
+  X = np.random.randn(n, d)
+  y = X.dot(th) + sig*np.random.randn(n)
+  return X, y
+
 def log_likelihood(z, prm):
     z = np.atleast_2d(z)
     x = z[:, :-1]
@@ -25,8 +34,10 @@ def grad_log_likelihood(z, prm):
     lmb = prm[:, d:-2]
     sig = prm[:, -2]
     tau = prm[:, -1]
+    XST = x.dot(th.T)
     grad = np.zeros((z.shape[0], prm.shape[0], prm.shape[1]))
-    grad[:, :, :x.shape[1]] = 1./sig**2*(y[:, np.newaxis] - x.dot(th.T))[:,:,np.newaxis]* x[:, np.newaxis, :]
+    grad[:, :, :th.shape[1]] = (1./sig[np.newaxis, :]**2*(y[:, np.newaxis] - XST))[:,:,np.newaxis]* x[:, np.newaxis, :]
+    grad[:, :, -2] = -1./sig[np.newaxis, :] +  1./(sig**3)*(y[:,np.newaxis]**2 - 2*XST*y[:,np.newaxis] + XST**2)
     return grad
 
 def log_prior(prm, sig0, a0, b0):
@@ -48,7 +59,7 @@ def log_prior(prm, sig0, a0, b0):
 
 def grad_log_prior(prm, sig0, a0, b0):
     prm = np.atleast_2d(prm)
-    d = (prm.shape[1]-2)/2
+    d = int((prm.shape[1]-2)/2)
     th = prm[:, :d]
     lmb = prm[:, d:-2]
     sig = prm[:, -2]
@@ -98,6 +109,7 @@ parameters {
   vector[d] theta; // auxiliary parameter
   real<lower=0> tau;
   vector<lower=0>[d] lambda;
+  real<lower=0> sig;
 }
 model {
   sig ~ gamma(a0, b0);

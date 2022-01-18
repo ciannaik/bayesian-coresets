@@ -1,6 +1,12 @@
 import numpy as np
 import scipy.linalg as sl
 
+def gen_synthetic(n, d, sig):
+  th = np.random.randn(d)
+  X = np.random.randn(n, d)
+  y = X.dot(th) + sig*np.random.randn(n)
+  return X, y
+
 def log_likelihood(z, th, sig):
     z = np.atleast_2d(z)
     th = np.atleast_2d(th)
