@@ -181,7 +181,7 @@ def run(arguments):
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
-				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:])
+				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0))
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,

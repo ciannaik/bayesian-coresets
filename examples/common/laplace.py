@@ -27,7 +27,7 @@ class LaplaceApprox(object):
                 self.th = res.x
             except Exception as e:
                 print(e)
-                _th0 += np.sqrt((_th0 ** 2).sum()) * 0.1 * np.random.randn(_th0.shape[0])
+                _th0 += (np.sqrt((_th0 ** 2).sum()) + 0.1) * 0.1 * np.random.randn(_th0.shape[0])
                 continue
             break
         if self.diag:
