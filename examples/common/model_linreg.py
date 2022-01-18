@@ -23,9 +23,11 @@ def grad_log_likelihood(z, th, sig):
     return 1./sig**2*(y[:, np.newaxis] - x.dot(th.T))[:,:,np.newaxis]* x[:, np.newaxis, :]
 
 def log_prior(th, mu0, sig0):
+    th = np.atleast_2d(th)
     return -th.shape[1]/2.*np.log(2.*np.pi*sig0**2) - 1./2.*((th - mu0)**2).sum(axis=1)/sig0**2
 
 def grad_log_prior(th, mu0, sig0):
+    th = np.atleast_2d(th)
     return -(th - mu0)/sig0**2
 
 def log_joint(z, th, w, sig, mu0, sig0):
