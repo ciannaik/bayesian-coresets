@@ -171,19 +171,19 @@ def run(arguments):
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
+    # compute mmd discrepancies
+    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples)
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples)
     # compute stein discrepancies
-    # note: we evaluate the grad log p under the full posterior for both sample sets
     scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    scores_full = model.grad_log_joint(X, full_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full,sigma=5)
-    gauss_stein = np.abs(gauss_stein) + 1e-10
-    imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full,g=0.5)
-    imq_stein = np.abs(imq_stein) + 1e-10
+    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, scores_approx)
+    imq_stein = stein.imq_stein_discrepancy(approx_samples, scores_approx)
 
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_stein=gauss_stein, imq_stein=imq_stein)
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+                 gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
 
