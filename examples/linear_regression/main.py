@@ -177,8 +177,7 @@ def run(arguments):
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.opt_itrs,
-                                    step_sched=eval(arguments.step_sched))
+    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
@@ -265,7 +264,9 @@ parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
 parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
-                    help="Number of optimization iterations (for methods that use iterative weight refinement)")
+                    help="Number of optimization iterations (for SVI)")
+parser.add_argument('--newton_opt_itrs', type=str, default=20,
+                    help="Number of optimization iterations (for QNC)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 

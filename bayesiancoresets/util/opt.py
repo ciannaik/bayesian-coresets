@@ -30,13 +30,18 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
   return x
 
 
-def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i+1)):
+def an_opt(x0, grd, search_direction, cov_grad_variances, opt_itrs=20):
   print("Performing Newton Optimization:")
 
   # Define starting point
   x = x0.copy()
-  # Use a line search to take a good initial step
   print("Newton Step: 0")
+  # Estimate variance for relevant terms for tuning projection dimension
+  samples_var = cov_grad_variances(x)
+  print("Newton Step Hessian Variance: {}".format(samples_var[0]))
+  print("Newton Step Gradiant Variance: {}".format(samples_var[1]))
+
+  # Use a line search to take a good initial step
   g = search_direction(x)
   g_u = grd(x)
 
@@ -45,6 +50,7 @@ def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i
   a=1.0
   k=0.9
   fail = 0
+  upd = 0
   print("Optimizing step size:")
   while np.all(x+a*g < 0):
       a /= 1.5
@@ -57,7 +63,7 @@ def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i
     else:
       upd = a*g
       print("alpha = {}".format(a))
-      print("a = {}".format(np.dot(grd(np.maximum(x + a * g, 0.)), g)))
+      print("a = {}".format(np.dot(grd(np.maximum(x + upd, 0.)), g)))
       fail = 1
       break
 
@@ -69,7 +75,7 @@ def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i
   x = np.maximum(x, 0.)
   # Take the rest of the steps with step size 1
   norm_grd_old = 0
-  for i in range(20):
+  for i in range(opt_itrs):
     print("Newton Step: {}".format(i+1))
     g = search_direction(x)
     g_u = grd(x)
@@ -80,9 +86,6 @@ def an_opt(x0, grd, search_direction, opt_itrs=1000, step_sched=lambda i : 1./(i
         rel_g_u = 1
     norm_grd_old = norm_grd
     # Early stopping conditions:
-    # Small norm of gradient
-    if np.sqrt(np.sum(g_u**2)) <= 0.001:
-        break
     # Small relative difference from previous gradient
     if rel_g_u <= 0.1:
         break

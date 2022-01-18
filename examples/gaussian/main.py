@@ -122,8 +122,7 @@ def run(arguments):
     unif = bc.UniformSamplingCoreset(X)
     giga = bc.HilbertCoreset(X, projector)
     sparsevi = bc.SparseVICoreset(X, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.opt_itrs,
-                                    step_sched=eval(arguments.step_sched))
+    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.newton_opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
@@ -175,8 +174,10 @@ def run(arguments):
     # note: we evaluate the grad log p under the full posterior for both sample sets
     scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
     scores_full = model.grad_log_joint(X, full_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
-    imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full)
+    gauss_stein = stein.gaussian_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full,sigma=5)
+    gauss_stein = np.abs(gauss_stein) + 1e-10
+    imq_stein = stein.imq_stein_discrepancy(approx_samples, full_samples, scores_approx, scores_full,g=0.5)
+    imq_stein = np.abs(imq_stein) + 1e-10
 
 
     print('Saving ' + log_suffix)
@@ -200,21 +201,23 @@ plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='1000', help='Dataset size/number of examples')
-parser.add_argument('--data_dim', type=int, default = '200', help="The dimension of the multivariate normal distribution to use for this experiment")
-parser.add_argument('--alg', type=str, default='GIGA',
+parser.add_argument('--data_dim', type=int, default = '10', help="The dimension of the multivariate normal distribution to use for this experiment")
+parser.add_argument('--alg', type=str, default='QNC',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--samples_inference", type=int, default=1000,
+parser.add_argument("--samples_inference", type=int, default=2000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=2000,
+parser.add_argument("--proj_dim", type=int, default=100,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=50, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
-                    help="Number of optimization iterations (for methods that use iterative weight refinement)")
+                    help="Number of optimization iterations (for SVI)")
+parser.add_argument('--newton_opt_itrs', type=str, default=20,
+                    help="Number of optimization iterations (for QNC)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=15,
+parser.add_argument('--trial', type=int, default=16,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")

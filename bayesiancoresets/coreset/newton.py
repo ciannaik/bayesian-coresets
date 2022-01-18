@@ -6,15 +6,12 @@ from scipy.linalg import solve_triangular
 
 
 class QuasiNewtonCoreset(Coreset):
-    def __init__(self, data, projector, n_subsample_select=None, n_subsample_opt=None, opt_itrs=100,
-                 step_sched=lambda i: 1. / (i + 1), **kw):
+    def __init__(self, data, projector, n_subsample_opt=None, opt_itrs=20, **kw):
         self.data = data
         self.cts = []
         self.ct_idcs = []
         self.projector = projector
-        self.n_subsample_select = None if n_subsample_select is None else min(data.shape[0], n_subsample_select)
         self.n_subsample_opt = None if n_subsample_opt is None else min(data.shape[0], n_subsample_opt)
-        self.step_sched = step_sched
         self.opt_itrs = opt_itrs
         super().__init__(**kw)
 
@@ -65,18 +62,38 @@ class QuasiNewtonCoreset(Coreset):
         self.pts = self.data[self.idcs]
 
     def _optimize(self):
+
+        def cov_grad_variances(w):
+            # Tune the number of samples needed to reduce the noise
+            # of the stochastic Newton step below a certain threshold
+
+            vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
+            # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
+            #                                                                          return_sum=False)
+            resid = sum_scaling*vecs_sum - w.dot(corevecs)
+            # resid = sum_scaling * vecs.sum(axis=0) - w.dot(corevecs)
+
+            corevecs_cov_samples = np.array([np.outer(corevecs[:, i], corevecs[:, i]) for i in range(corevecs.shape[1])])
+
+            cov_norms = np.array(
+                [np.linalg.norm(corevecs_cov_samples[i, :, :], ord=2) for i in range(corevecs.shape[1])])
+            cov_norm_variance = np.var(cov_norms)/corevecs.shape[1]
+            grd_samples = corevecs*resid
+
+            grd_norms = np.sqrt(np.sum(grd_samples ** 2, axis=1))
+            grd_norm_variance = np.var(grd_norms)/corevecs.shape[1]
+            return cov_norm_variance, grd_norm_variance
         
         def search_direction(w, tau=0.01):
-            # vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
-            vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
-                                                                                     return_sum=False)
-            # resid = sum_scaling*vecs_sum - w.dot(corevecs)
-            resid = sum_scaling * vecs.sum(axis=0) - w.dot(corevecs)
+            vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
+            # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
+            #                                                                          return_sum=False)
+            resid = sum_scaling*vecs_sum - w.dot(corevecs)
+            # resid = sum_scaling * vecs.sum(axis=0) - w.dot(corevecs)
 
             corevecs_cov = corevecs.dot(corevecs.T) / corevecs.shape[1]
             # add regularization term to hessian
             np.fill_diagonal(corevecs_cov, corevecs_cov.diagonal() + tau)
-            # np.fill_diagonal(corevecs_cov, (1+tau)*corevecs_cov.diagonal())
             print("Quasi-Hessian condition number: {}".format(np.linalg.cond(corevecs_cov)))
             grd = (corevecs.dot(resid) / corevecs.shape[1])
             print("gradient norm: {}".format(np.sqrt(((grd)**2).sum())))
@@ -84,17 +101,17 @@ class QuasiNewtonCoreset(Coreset):
             search_direction = np.linalg.solve(corevecs_cov, grd)
             return search_direction
 
-        def grd(x, tau=0.01):
-            # vecs_sum, sum_scaling, sub_idcs, corevecs, muw, Lsigw = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
-            vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, x, self.pts,
-                                                                               return_sum=False)
-            # resid = sum_scaling*vecs_sum - w.dot(corevecs)
-            resid = sum_scaling * vecs.sum(axis=0) - x.dot(corevecs)
+        def grd(w):
+            vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
+            # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, x, self.pts,
+            #                                                                    return_sum=False)
+            resid = sum_scaling*vecs_sum - w.dot(corevecs)
+            # resid = sum_scaling * vecs.sum(axis=0) - x.dot(corevecs)
             grd = (corevecs.dot(resid) / corevecs.shape[1])
             return -grd
 
         x0 = self.wts
-        self.wts = an_opt(x0, grd, search_direction, opt_itrs=self.opt_itrs, step_sched=self.step_sched)
+        self.wts = an_opt(x0, grd, search_direction, cov_grad_variances, opt_itrs=self.opt_itrs)
         # use uniform weights if sum of weights is negative
         if self.wts.sum() <= 0:
             self.wts = self.data.shape[0] * np.ones(self.pts.shape[0]) / self.pts.shape[0]
