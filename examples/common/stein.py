@@ -95,5 +95,5 @@ def imq_stein(x, scores, sigma=1, beta=0.5):
         beta / (2.*sigma**2) * (res) ** (-beta - 1) * p
         - 2 * beta * (beta + 1) /(2.*sigma**2)** 2 * dists * res ** (-beta - 2)
     )
-    k_pi = score_x.dot(score_y.T) * kxy + dkxy + d2kxy
-    return k_pi.sum()/(x.shape[0]*y.shape[0])
+    k_pi = scores.dot(scores.T) * kxy + dkxy + d2kxy
+    return k_pi.sum() / (x.shape[0] ** 2)
