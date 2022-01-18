@@ -1,39 +1,80 @@
 import numpy as np
 import scipy.linalg as sl
 
-def log_likelihood(z, th, sigsq):
-  z = np.atleast_2d(z)
-  x = z[:, :-1]
-  y = z[:, -1]
-  th = np.atleast_2d(th)
-  XST = x.dot(th.T)
-  return -1./2.*np.log(2.*np.pi*sigsq) - 1./(2.*sigsq)*(y[:,np.newaxis]**2 - 2*XST*y[:,np.newaxis] + XST**2)
+def gen_synthetic(n, d, sig):
+  th = np.random.randn(d)
+  X = np.random.randn(n, d)
+  y = X.dot(th) + sig*np.random.randn(n)
+  return X, y
 
-def grad_x_log_likelihood(z, th, sigsq):
-  z = np.atleast_2d(z)
-  x = z[:, :-1]
-  y = z[:, -1]
-  th = np.atleast_2d(th)
-  return 1./sigsq*(y[:, np.newaxis] - x.dot(th.T))[:,:,np.newaxis]*np.hstack((th, np.ones(th.shape[0])[:,np.newaxis]))[np.newaxis, :, :]
+def log_likelihood(z, th, sig):
+    z = np.atleast_2d(z)
+    th = np.atleast_2d(th)
+    x = z[:, :-1]
+    y = z[:, -1]
+    XST = x.dot(th.T)
+    return -1./2.*np.log(2.*np.pi*sig**2) - 1./(2.*sig**2)*(y[:,np.newaxis]**2 - 2*XST*y[:,np.newaxis] + XST**2)
 
-def KL(mu0, Sig0, mu1, Sig1inv):
-  t1 = np.dot(Sig1inv, Sig0).trace()
-  t2 = np.dot((mu1-mu0),np.dot(Sig1inv, mu1-mu0))
-  t3 = -np.linalg.slogdet(Sig1inv)[1] - np.linalg.slogdet(Sig0)[1]
-  return 0.5*(t1+t2+t3-mu0.shape[0])
+def grad_log_likelihood(z, th, sig):
+    z = np.atleast_2d(z)
+    th = np.atleast_2d(th)
+    x = z[:, :-1]
+    y = z[:, -1]
+    return 1./sig**2*(y[:, np.newaxis] - x.dot(th.T))[:,:,np.newaxis]* x[:, np.newaxis, :]
 
-def weighted_post(th0, Sig0inv, sigsq, z, w): 
-  if w.shape[0] > 0:
-      z = np.atleast_2d(z)
-      X = z[:, :-1]
-      Y = z[:, -1]
-      LSigpInv = np.linalg.cholesky(Sig0inv + (w[:, np.newaxis]*X).T.dot(X)/sigsq) #SigpInv = LL^T, L lower tri
-      USigp = sl.solve_triangular(LSigpInv, np.eye(LSigpInv.shape[0]), lower=True, overwrite_b = True, check_finite = False).T #Sigp = UU^T, U upper tri
-      mup = np.dot(USigp.dot(USigp.T),  np.dot(Sig0inv,th0) + (w[:, np.newaxis]*Y[:,np.newaxis]*X).sum(axis=0)/sigsq )
-  else:
-      mup = th0
-      LSigpInv = np.linalg.cholesky(Sig0inv)
-      USigp = sl.solve_triangular(LSigpInv, np.eye(LSigpInv.shape[0]), lower=True, overwrite_b = True, check_finite = False).T
-  return mup, USigp, LSigpInv
+def log_prior(th, mu0, sig0):
+    return -th.shape[1]/2.*np.log(2.*np.pi*sig0**2) - 1./2.*((th - mu0)**2).sum(axis=1)/sig0**2
 
+def grad_log_prior(th, mu0, sig0):
+    return -(th - mu0)/sig0**2
+
+def log_joint(z, th, w, sig, mu0, sig0):
+    return (w[:,np.newaxis]*log_likelihood(z, th, sig)).sum(axis=0) + log_prior(th, mu0, sig0)
+
+def grad_log_joint(z, th, w, sig, mu0, sig0):
+    return (w[:,np.newaxis,np.newaxis]*grad_log_likelihood(z, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
+
+def hess_log_joint(z, th, w, sig, mu0, sig0):
+    z = np.atleast_2d(z)
+    th = np.atleast_2d(th)
+    x = z[:, :-1]
+    y = z[:, -1]
+    return -(w*x.T).dot(x)/sig**2 - np.eye(x.shape[1])/sig0**2
+
+def weighted_post_sampler(n, z, w, sig, mu0, sig0):
+    x = z[:, :-1]
+    y = z[:, -1]
+    if w.shape[0] > 0:
+        SigpInv = np.eye(x.shape[1])/sig0**2 + (w*x.T).dot(x)/sig**2
+        LSigpInv = np.linalg.cholesky(SigpInv)
+        USigp = sl.solve_triangular(LSigpInv, np.eye(LSigpInv.shape[0]), lower=True, overwrite_b=True, check_finite=False).T # Sigp = UU^T, U upper tri
+        mup = (USigp.dot(USigp.T)).dot(mu0*np.ones(x.shape[1])/sig0**2 + (w[:,np.newaxis]*y[:,np.newaxis]*x).sum(axis=0)/sig**2)
+    else:
+        mup = mu0*np.ones(x.shape[1])
+        USigp = sig0*np.eye(x.shape[1])
+    return mup + USigp.dot(np.random.randn(x.shape[1], n)).T
+
+stan_code = """
+data {
+  int<lower=0> n; // number of observations
+  int<lower=0> d; // number of predictors
+  vector[n] y; // outputs
+  matrix[n,d] x; // inputs
+  vector<lower=0>[n] w;  // weights
+  real mu0;
+  real<lower=0> sig0;
+  real<lower=0> sig;
+}
+parameters {
+  vector[d] theta; // auxiliary parameter
+}
+model {
+  for(i in 1:d){
+      theta[i] ~ normal(mu0, sig0);
+  }
+  for(i in 1:n){
+    target += normal_lpdf(y[i] | x[i]*theta, sig) * w[i];
+  }
+}
+"""
 

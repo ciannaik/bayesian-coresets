@@ -1,14 +1,16 @@
 #!/bin/bash
 
-for dnm in "synth_poiss_large"
+for dnm in "synth_sparsereg"
 do
-    for alg in "UNIF" "GIGA-OPT" "GIGA-REAL" "ANC"
-#    for alg in "ANC"
+    for alg in "UNIF" "GIGA" "QNC"
     do
-        for ID in {1..3}
+        for ID in 15 3 5 10
         do
-		python3 main.py --model poiss --dataset $dnm --alg $alg --trial $ID run
-	done
+        	for M in 10 50 100
+        	do
+				python3 main.py --dataset $dnm --coreset_size $M --alg $alg --trial $ID run
+			done
+		done
     done
 done
 
