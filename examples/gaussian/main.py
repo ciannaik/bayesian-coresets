@@ -206,7 +206,7 @@ plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='10000', help='Dataset size/number of examples')
-parser.add_argument('--data_dim', type=int, default = '10', help="The dimension of the multivariate normal distribution to use for this experiment")
+parser.add_argument('--data_dim', type=int, default = '50', help="The dimension of the multivariate normal distribution to use for this experiment")
 parser.add_argument('--alg', type=str, default='IHT',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods

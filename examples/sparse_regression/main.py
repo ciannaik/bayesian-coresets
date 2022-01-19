@@ -17,6 +17,7 @@ import results
 import plotting
 import stein
 from model_gaussian import KL
+from bayesiancoresets.snnls import IHT
 
 
 def plot(arguments):
@@ -143,12 +144,14 @@ def run(arguments):
 				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:],
                                     np.zeros(Z.shape[1]),
 				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:,:])
+    iht = bc.HilbertCoreset(X, projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
             'LAP' : lapl,
             'GIGA': giga,
-            'UNIF': unif}
+            'UNIF': unif,
+            'IHT':iht}
     alg = algs[arguments.alg]
 
 
@@ -218,7 +221,7 @@ plot_subparser.set_defaults(func=plot)
 parser.add_argument('--dataset', type=str, default="synth_sparsereg",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='GIGA',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")

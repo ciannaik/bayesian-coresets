@@ -2,7 +2,7 @@
 
 for dnm in "synth_sparsereg"
 do
-    for alg in "UNIF" "GIGA" "QNC"
+    for alg in "UNIF" "GIGA" "QNC" 
     do
         for ID in 15 3 5 10
         do
