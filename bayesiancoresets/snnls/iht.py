@@ -11,7 +11,7 @@ class IHT(SparseNNLS):
     def __init__(self, A, b):
         super().__init__(A, b)
         self.A = A
-        self.b = b
+        self.b = np.atleast_2d(b).T
 
     #overrides SparseNNLS build
     def build(self, size):

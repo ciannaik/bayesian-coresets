@@ -79,7 +79,7 @@ def gauss_stein(x, scores, sigma=1):
     diffs = (d * scores_diffs).sum(axis=-1)
     der2 = p - dists / sigma**2
     stein_kernel = k * (scalars + diffs / sigma**2 + der2 / sigma**2)
-    return stein_kernel.sum()/(x.shape[0]*y.shape[0])
+    return stein_kernel.sum()/(x.shape[0] ** 2)
 
 
 def imq_stein(x, scores, sigma=1, beta=0.5):
