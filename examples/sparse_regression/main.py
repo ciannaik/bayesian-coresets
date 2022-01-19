@@ -123,7 +123,7 @@ def run(arguments):
         full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
         if not os.path.exists('mcmc_cache'):
             os.mkdir('mcmc_cache')
-        np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
+        # np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
 
     #######################################
@@ -144,7 +144,7 @@ def run(arguments):
 				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:],
                                     np.zeros(Z.shape[1]),
 				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:,:])
-    iht = bc.HilbertCoreset(X, projector, snnls=IHT)
+    iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -220,14 +220,14 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--dataset', type=str, default="synth_sparsereg",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='GIGA',
+parser.add_argument('--alg', type=str, default='QNC',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=20, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -257,7 +257,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='16pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')

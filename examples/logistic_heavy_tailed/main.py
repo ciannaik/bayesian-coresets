@@ -70,7 +70,7 @@ def run(arguments):
     #######################################
 
     print('Loading/creating dataset ' + log_suffix)
-    if arguments.dataset == 'synth_lr_cauchy_large_new':
+    if arguments.dataset == 'synth_lr_cauchy':
         X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
         dataset_filename = '../data/' + arguments.dataset + '.npz'
         np.savez(dataset_filename, X=X, y=Y)
@@ -138,13 +138,14 @@ def run(arguments):
                                                 model.grad_z_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
-    sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
+    sparsevi = bc.SparseVICoreset(Z, projector, n_subsample_select=1000, n_subsample_opt=1000,
+                                  opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
 				    lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
                                     np.zeros(Z.shape[1]),
 				    hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
-    iht = bc.HilbertCoreset(X, projector, snnls=IHT)
+    iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -202,13 +203,12 @@ def run(arguments):
     rklw_full = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute mmd discrepancies
-    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples)
-    imq_mmd = stein.imq_mmd(approx_samples, full_samples)
+    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
     # compute stein discrepancies
     scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
-    gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
-    imq_stein = stein.imq_stein(approx_samples, scores_approx)
-
+    gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
+    imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
@@ -236,7 +236,7 @@ parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
 parser.add_argument('--dataset', type=str, default="synth_lr_cauchy_large",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='QNC',
+parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
@@ -273,7 +273,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='16pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')

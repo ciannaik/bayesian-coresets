@@ -30,16 +30,15 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
   return x
 
 
-def an_opt(x0, grd, search_direction, cov_grad_variances, opt_itrs=20):
+def an_opt(x0, grd, search_direction, grad_norm_variance, opt_itrs=20):
   print("Performing Newton Optimization:")
 
   # Define starting point
   x = x0.copy()
   print("Newton Step: 0")
   # Estimate variance for relevant terms for tuning projection dimension
-  samples_var = cov_grad_variances(x)
-  print("Newton Step Hessian Variance: {}".format(samples_var[0]))
-  print("Newton Step Gradiant Variance: {}".format(samples_var[1]))
+  samples_var = grad_norm_variance(x)
+  print("Newton Step Gradiant Variance: {}".format(samples_var))
 
   # Use a line search to take a good initial step
   g = search_direction(x)

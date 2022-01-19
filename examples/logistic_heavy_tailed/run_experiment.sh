@@ -2,10 +2,10 @@
 
 for dnm in "synth_lr_cauchy_large"
 do
-    for alg in "LAP" "UNIF" "GIGA" "QNC"
-#    for alg in "LAP"
+    for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT" "SVI"
+#    for alg in "IHT"
     do
-        for ID in 4
+        for ID in 1 2 3
         do
         	for M in 100 200 500 1000
         	do

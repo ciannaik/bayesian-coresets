@@ -45,7 +45,7 @@ def gauss_mmd(x, y, sigma=1):
     kernel_xy = np.exp(-xy_sq_dists/(2.*sigma**2))
 
     # sum K(X,X)/N^2 + sum K(Y,Y)/M^2 - 2 sum K(X,Y)/(M*N)
-    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/x.shape[0]*y.shape[0]
+    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/(x.shape[0]*y.shape[0])
 
 def imq_mmd(x, y, sigma=1, beta=0.5):
     d = x.shape[1]
@@ -66,7 +66,7 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     kernel_xy = 1./(xy_sq_dists/(2.*sigma**2) + 1.)**beta
 
     # sum K(X,X)/N^2 + sum K(Y,Y)/M^2 - 2 sum K(X,Y)/(M*N)
-    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/x.shape[0]*y.shape[0]
+    return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/(x.shape[0]*y.shape[0])
 
 
 def gauss_stein(x, scores, sigma=1):

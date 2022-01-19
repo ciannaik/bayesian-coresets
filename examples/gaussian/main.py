@@ -177,7 +177,7 @@ def run(arguments):
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute mmd discrepancies
     gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=0.5)
-    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=0.1)
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=0.5)
     # compute stein discrepancies
     scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
     gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
@@ -207,7 +207,7 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='10000', help='Dataset size/number of examples')
 parser.add_argument('--data_dim', type=int, default = '50', help="The dimension of the multivariate normal distribution to use for this experiment")
-parser.add_argument('--alg', type=str, default='IHT',
+parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=2000,
@@ -244,7 +244,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='16pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
