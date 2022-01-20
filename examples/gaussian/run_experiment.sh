@@ -5,9 +5,10 @@
 # then run every other method in parallel
 
 #for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT"
-for alg in "UNIF" "FULL"
+#for alg in "UNIF" "FULL"
+for alg in "LAP"
 do
-    for ID in 1 2 3
+    for ID in {1..10}
     do
     	for M in 10 50 100 500 1000 5000
         do
