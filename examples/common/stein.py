@@ -30,15 +30,15 @@ import sys
 def gauss_mmd(x, y, sigma=1):
     d = x.shape[1]
     # do this computation in blocks to avoid heavy memory requirements
-    block_size = 100
+    blk = 500
 
     print('gauss_mmd KXX')
     KXX = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, x.shape[0], block_size):
-            xx_diffs = x[i:(i+block_size), np.newaxis, :] - x[np.newaxis, j:(j+block_size), :]
+        for j in range(0, x.shape[0], blk):
+            xx_diffs = x[i:(i+blk), np.newaxis, :] - x[np.newaxis, j:(j+blk), :]
             xx_sq_dists = (xx_diffs**2).sum(axis=2)
             KXX += np.exp(-xx_sq_dists/(2.*sigma**2)).sum()
     sys.stdout.write("\n")
@@ -46,11 +46,11 @@ def gauss_mmd(x, y, sigma=1):
 
     print('gauss_mmd KYY')
     KYY = 0.
-    for i in range(0, y.shape[0], block_size):
+    for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, y.shape[0], block_size):
-            yy_diffs = y[i:(i+block_size), np.newaxis, :] - y[np.newaxis, j:(j+block_size), :]
+        for j in range(0, y.shape[0], blk):
+            yy_diffs = y[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             yy_sq_dists = (yy_diffs**2).sum(axis=2)
             KYY += np.exp(-yy_sq_dists/(2.*sigma**2)).sum()
     sys.stdout.write("\n")
@@ -58,11 +58,11 @@ def gauss_mmd(x, y, sigma=1):
 
     print('gauss_mmd KXY')
     KXY = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, y.shape[0], block_size):
-            xy_diffs = x[i:(i+block_size), np.newaxis, :] - y[np.newaxis, j:(j+block_size), :]
+        for j in range(0, y.shape[0], blk):
+            xy_diffs = x[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             xy_sq_dists = (xy_diffs**2).sum(axis=2)
             KXY += np.exp(-xy_sq_dists/(2.*sigma**2)).sum()
     sys.stdout.write("\n")
@@ -94,15 +94,15 @@ def gauss_mmd(x, y, sigma=1):
 def imq_mmd(x, y, sigma=1, beta=0.5):
     d = x.shape[1]
     # do this computation in blocks to avoid heavy memory requirements
-    block_size = 100
+    blk = 500
 
     print('imq_mmd KXX')
     KXX = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, x.shape[0], block_size):
-            xx_diffs = x[i:(i+block_size), np.newaxis, :] - x[np.newaxis, j:(j+block_size), :]
+        for j in range(0, x.shape[0], blk):
+            xx_diffs = x[i:(i+blk), np.newaxis, :] - x[np.newaxis, j:(j+blk), :]
             xx_sq_dists = (xx_diffs**2).sum(axis=2)
             KXX += (1./(xx_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
     sys.stdout.write("\n")
@@ -110,11 +110,11 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
 
     print('imq_mmd KYY')
     KYY = 0.
-    for i in range(0, y.shape[0], block_size):
+    for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, y.shape[0], block_size):
-            yy_diffs = y[i:(i+block_size), np.newaxis, :] - y[np.newaxis, j:(j+block_size), :]
+        for j in range(0, y.shape[0], blk):
+            yy_diffs = y[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             yy_sq_dists = (yy_diffs**2).sum(axis=2)
             KYY += (1./(yy_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
     sys.stdout.write("\n")
@@ -122,11 +122,11 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
 
     print('imq_mmd KXY')
     KXY = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, y.shape[0], block_size):
-            xy_diffs = x[i:(i+block_size), np.newaxis, :] - y[np.newaxis, j:(j+block_size), :]
+        for j in range(0, y.shape[0], blk):
+            xy_diffs = x[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             xy_sq_dists = (xy_diffs**2).sum(axis=2)
             KXY += (1./(xy_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
     sys.stdout.write("\n")
@@ -154,20 +154,20 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
 def gauss_stein(x, scores, sigma=1):
     _, p = x.shape
     # do this computation in blocks to avoid heavy memory requirements
-    block_size = 100
+    blk = 500
 
     print('gauss_stein')
 
     KSD = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, x.shape[0], block_size):
-            d = x[i:(i+block_size), None, :] - x[None, j:(j+block_size), :]
+        for j in range(0, x.shape[0], blk):
+            d = x[i:(i+blk), None, :] - x[None, j:(j+blk), :]
             dists = (d ** 2).sum(axis=-1)
             k = np.exp(-dists / sigma**2 / 2)
-            scalars = scores[i:(i+block_size),:].dot(scores[j:(j+block_size),:].T)
-            scores_diffs = scores[i:(i+block_size), None, :] - scores[None, j:(j+block_size), :]
+            scalars = scores[i:(i+blk),:].dot(scores[j:(j+blk),:].T)
+            scores_diffs = scores[i:(i+blk), None, :] - scores[None, j:(j+blk), :]
             diffs = (d * scores_diffs).sum(axis=-1)
             der2 = p - dists / sigma**2
             stein_kernel = k * (scalars + diffs / sigma**2 + der2 / sigma**2)
@@ -180,27 +180,27 @@ def gauss_stein(x, scores, sigma=1):
 def imq_stein(x, scores, sigma=1, beta=0.5):
     _, p = x.shape
     # do this computation in blocks to avoid heavy memory requirements
-    block_size = 100
+    blk = 500
 
     print("imq_stein")
 
     KSD = 0.
-    for i in range(0, x.shape[0], block_size):
+    for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
         sys.stdout.flush()
-        for j in range(0, x.shape[0], block_size):
-            d = x[i:(i+block_size), None, :] - x[None, j:(j+block_size), :]
+        for j in range(0, x.shape[0], blk):
+            d = x[i:(i+blk), None, :] - x[None, j:(j+blk), :]
             dists = (d ** 2).sum(axis=-1)
             res = 1 + dists /(2.*sigma**2)
             kxy = res ** (-beta)
-            scores_d = scores[i:(i+block_size), None, :] - scores[None, j:(j+block_size), :]
+            scores_d = scores[i:(i+blk), None, :] - scores[None, j:(j+blk), :]
             temp = d * scores_d
             dkxy = 2 * beta /(2.*sigma**2) * (res) ** (-beta - 1) * temp.sum(axis=-1)
             d2kxy = 2 * (
                 beta / (2.*sigma**2) * (res) ** (-beta - 1) * p
                 - 2 * beta * (beta + 1) /(2.*sigma**2)** 2 * dists * res ** (-beta - 2)
             )
-            stein_kernel = scores[i:(i+block_size),:].dot(scores[j:(j+block_size),:].T) * kxy + dkxy + d2kxy
+            stein_kernel = scores[i:(i+blk),:].dot(scores[j:(j+blk),:].T) * kxy + dkxy + d2kxy
             KSD += stein_kernel.sum()
     sys.stdout.write("\n")
     sys.stdout.flush()

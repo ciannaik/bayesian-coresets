@@ -30,7 +30,7 @@ def grad_log_joint(x, th, wts, sig, mu0, sig0):
 
 def grad_log_joint(x, th, wts, sig, mu0, sig0):
   # do this computation in x-blocks to avoid high memory usage in the large N regime
-  blk = 100
+  blk = 500
   grd = grad_log_prior(th, mu0, sig0)
   for i in range(0, x.shape[0], blk):
     grd += (wts[i:(i+blk), np.newaxis, np.newaxis]*grad_log_likelihood(x[i:(i+blk), :], th, sig)).sum(axis=0)
@@ -46,7 +46,7 @@ def hess_log_prior(th, mu0, sig0):
 
 def hess_log_joint(x, th, wts, sig, mu0, sig0):
   # do this computation in x-blocks to avoid high memory usage in the large N regime
-  blk = 100
+  blk = 500
   hess = hess_log_prior(th, mu0, sig0)
   for i in range(0, x.shape[0], blk):
     hess += (wts[i:(i+blk), np.newaxis, np.newaxis]*hess_log_likelihood(x[i:(i+blk),:], th, sig)).sum(axis=0)
