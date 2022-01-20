@@ -3,6 +3,12 @@ from scipy.optimize import minimize
 from scipy.linalg import solve_triangular
 import time
 
+__nf = 1
+def _callback(x, obj):
+    global __nf
+    print(f"Laplace iteration {__nf}, objective {obj(x)}")
+    __nf += 1
+
 class LaplaceApprox(object):
     def __init__(self, log_joint, grad_log_joint, th0, hess_log_joint=None, diag_hess_log_joint=None, trials=10):
         self.log_joint = log_joint
@@ -23,7 +29,7 @@ class LaplaceApprox(object):
         for i in range(self.trials):
             try:
                 res = minimize(lambda mu: -self.log_joint(mu), _th0,
-                               jac=lambda mu: -self.grad_log_joint(mu))
+                        jac=lambda mu: -self.grad_log_joint(mu), callback=lambda x : _callback(x, self.log_joint))
                 self.th = res.x
             except Exception as e:
                 print(e)
