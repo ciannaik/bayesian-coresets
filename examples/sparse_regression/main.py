@@ -9,6 +9,7 @@ import sys, os
 import argparse
 import cProfile, pstats, io
 from pstats import SortKey
+
 # make it so we can import models/etc from parent folder
 sys.path.insert(1, os.path.join(sys.path[0], '../common'))
 import mcmc
@@ -22,14 +23,17 @@ from bayesiancoresets.snnls import IHT
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
-    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
+    df = results.load_matching(arguments,
+                               match=['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
     # call the generic plot function
     plotting.plot(arguments, df)
 
 
 def run(arguments):
     # suffix for printouts
-    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', data: ' + arguments.dataset + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
+    log_suffix = '(coreset size: ' + str(
+        arguments.coreset_size) + ', data: ' + arguments.dataset + ', alg: ' + arguments.alg + ', trial: ' + str(
+        arguments.trial) + ')'
 
     #######################################
     #######################################
@@ -77,8 +81,8 @@ def run(arguments):
         X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
     else:
         raise NotImplementedError
-        #X, Y = model.load_data('../data/' + arguments.dataset + '.npz')
-    Z = np.hstack((X, Y[:,np.newaxis]))
+        # X, Y = model.load_data('../data/' + arguments.dataset + '.npz')
+    Z = np.hstack((X, Y[:, np.newaxis]))
 
     ####################################################################
     ####################################################################
@@ -87,6 +91,7 @@ def run(arguments):
     ####################################################################
 
     print('Creating weighted sampler ' + log_suffix)
+
     def sample_w(n, wts, pts, get_timing=False):
         # passing in X, Y into the stan sampler
         # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
@@ -97,7 +102,7 @@ def run(arguments):
             sampler_data = {'x': np.zeros((1, X.shape[1])), 'y': np.zeros(1), 'w': np.zeros(1),
                             'd': X.shape[1], 'n': 1, 'sig0': sig0, 'a0': a0, 'b0': b0}
         _samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, 'sparse_regression',
-                                                            model.stan_code, arguments.trial)
+                                                       model.stan_code, arguments.trial)
 
         samples = np.hstack((_samples['theta'].T, _samples['lambda'].T, _samples['sig'].T, _samples['tau'].T))
         if get_timing:
@@ -112,7 +117,8 @@ def run(arguments):
     #######################################
 
     print('Checking for cached full MCMC samples ' + log_suffix)
-    mcmc_cache_filename = 'mcmc_cache/full_samples_' + str(N_synth) + '_' + str(d_synth) + '_' + str(d_active) + '_' + arguments.dataset + '.npz'
+    mcmc_cache_filename = 'mcmc_cache/full_samples_' + str(N_synth) + '_' + str(d_synth) + '_' + str(
+        d_active) + '_' + arguments.dataset + '.npz'
     if os.path.exists(mcmc_cache_filename):
         print('Cache exists, loading')
         tmp__ = np.load(mcmc_cache_filename)
@@ -120,11 +126,11 @@ def run(arguments):
         t_full_mcmc_per_itr = float(tmp__['t'])
     else:
         print('Cache doesn\'t exist, running MCMC')
-        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+        full_samples, t_full_mcmc, t_full_mcmc_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z,
+                                                                  get_timing=True)
         if not os.path.exists('mcmc_cache'):
             os.mkdir('mcmc_cache')
         # np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
-
 
     #######################################
     #######################################
@@ -135,25 +141,25 @@ def run(arguments):
     print('Creating coreset construction objects ' + log_suffix)
     # create coreset construction objects
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
-                                                model.grad_log_likelihood)
+                                     model.grad_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
-    lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
-				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:],
-                                    np.zeros(Z.shape[1]),
-				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0,:,:])
+    lapl = laplace.LaplaceApprox(lambda th: model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
+                                 lambda th: model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0, :],
+                                 np.hstack((np.zeros(Z.shape[1]-1),(np.ones(Z.shape[1]-1)),1,1)),
+                                 hess_log_joint=lambda th: model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0,
+                                                                                b0)[0, :, :])
     iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
 
-    algs = {'SVI' : sparsevi,
-            'QNC' : newton,
-            'LAP' : lapl,
+    algs = {'SVI': sparsevi,
+            'QNC': newton,
+            'LAP': lapl,
             'GIGA': giga,
             'UNIF': unif,
-            'IHT':iht}
+            'IHT': iht}
     alg = algs[arguments.alg]
-
 
     print('Building ' + log_suffix)
     # Recursive alg needs to be run fully each time
@@ -161,31 +167,33 @@ def run(arguments):
     alg.build(arguments.coreset_size)
     t_build = time.perf_counter() - t0
 
-
     print('Sampling ' + log_suffix)
 
     __get = getattr(alg, "get", None)
     if callable(__get):
         wts, pts, idcs = alg.get()
         # Use MCMC on the coreset, measure time taken
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts,
+                                                                          get_timing=True)
     else:
-        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
-
+        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference,
+                                                                            get_timing=True)
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
     mu_approx = approx_samples.mean(axis=0)
     Sig_approx = np.cov(approx_samples, rowvar=False)
     LSig_approx = np.linalg.cholesky(Sig_approx)
-    LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True,
+                                      check_finite=False)
     mu_full = full_samples.mean(axis=0)
     Sig_full = np.cov(full_samples, rowvar=False)
     LSig_full = np.linalg.cholesky(Sig_full)
-    LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
+    LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True,
+                                    check_finite=False)
     # compute the relative 2 norm error for mean and covariance
     mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
+    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2) / np.linalg.norm(Sig_full, ord=2)
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
@@ -220,8 +228,8 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--dataset', type=str, default="synth_sparsereg",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='QNC',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
+parser.add_argument('--alg', type=str, default='LAP',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
@@ -263,6 +271,5 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
-
+# arguments.func(arguments)
+run(arguments)

@@ -3,7 +3,6 @@ from ..util.errors import NumericalPrecisionError
 from ..util.opt import nn_opt, an_opt
 from .coreset import Coreset
 from scipy.linalg import solve_triangular
-import time
 
 class QuasiNewtonCoreset(Coreset):
     def __init__(self, data, projector, n_subsample_opt=None, opt_itrs=20, **kw):
@@ -79,7 +78,7 @@ class QuasiNewtonCoreset(Coreset):
             grd_norm_variance = np.var(grd_norms)/corevecs.shape[1]
             return grd_norm_variance
         
-        def search_direction(w, tau=0.1):
+        def search_direction(w, tau=0.01):
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                          return_sum=False)

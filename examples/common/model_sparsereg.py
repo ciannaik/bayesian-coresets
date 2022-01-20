@@ -42,7 +42,7 @@ def grad_log_likelihood(z, prm):
 
 def log_prior(prm, sig0, a0, b0):
     prm = np.atleast_2d(prm)
-    d = (prm.shape[1]-2)/2
+    d = int((prm.shape[1]-2)/2)
     th = prm[:, :d]
     lmb = prm[:, d:-2]
     sig = prm[:, -2]
@@ -83,6 +83,7 @@ def grad_log_joint(z, prm, w, sig0, a0, b0):
 
 def hess_log_joint(z, prm, w, sig0, a0, b0):
     eps = 1e-3
+    prm = np.atleast_2d(prm)
     hess = np.zeros((prm.shape[0], prm.shape[1], prm.shape[1]))
     for i in range(prm.shape[1]):
         prmr = prm.copy()
