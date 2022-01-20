@@ -6,7 +6,12 @@ import datetime as dt
 import zipfile
 import shutil
 import requests
-from lxml import html
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from lxml import html, etree
 
 
 print("----Airline delays data----")
@@ -99,7 +104,7 @@ else:
 
 df = pd.read_csv('airline_data.csv')
 
-airport_codes = ['ATL', 'LAX', 'ORD', 'DFW', 'DEN', 'JFK', 'SFO', 'SEA']
+airport_codes = ['ATL', 'LAX', 'ORD', 'DFW', 'JFK', 'SFO', 'SEA']
 weather_codes = ['K'+code for code in airport_codes]
 
 print('Filtering data to origin airport {airport_codes}')
@@ -112,31 +117,35 @@ print(f'Found {df_weather.shape[0]} unique dates')
 print('Collecting weather information for each date & airport')
 features = ['Mean Temperature', 'Max Temperature', 'Min Temperature', 'Dew Point', 'Average Humidity', 'Maximum Humidity', 'Minimum Humidity', 'Precipitation', 'Snow', 'Snow Depth', 'Sea Level Pressure', 'Wind Speed', 'Max Wind Speed', 'Visibility']
 features = [f.lower().replace(' ', '') for f in features]
+if not os.path.isdir('weather_data'):
+    os.mkdir('weather_data')
 for wcode in weather_codes:
-    for row in range(df_weather.shape[0]):
+    for i in range(df_weather.shape[0]):
         date_string = f"{df_weather.iloc[i].YEAR}-{df_weather.iloc[i].MONTH}-{df_weather.iloc[i].DAY_OF_MONTH}"
-        req_prefix = 'https://www.wunderground.com/history/daily/'
-        resp = requests.get(req_prefix+'/'+wcode +'/date/' + date_string)
-
-        #def createHeadlessFirefoxBrowser():
-        # options = webdriver.FirefoxOptions()
-        # options.add_argument('--headless')
-        # return webdriver.Firefox(options=options)
-        #browser = webdriver.PhantomJS()
-        #browser.get(url)
-        #html = browser.page_source
-        #pd.read_html()
-
-        # browser = createHeadlessFirefoxBrowser()
-        tree = html.fromstring(resp.content)
-        elem = tree.xpath('//th[text()="High Temp"]')
-
-        #el = tree.xpath("//div[@class='channel']")
-
-
-
-        non_decimal = re.compile(r'[^\d.]+')
-        table = np.array(pd.read_html()[0])[:, :2]
+        html_path = 'weather_data/'+wcode+'-'+date_string+'.html'
+        print(f"Checking if weather data {html_path} exists")
+        # get the html file
+        if not os.path.exists(html_path):
+            print(f"Doesn't exist, downloading")
+            req_prefix = 'https://www.wunderground.com/history/daily/'
+            req_url = req_prefix + wcode +'/date/' + date_string
+            #resp = requests.get()
+            options = webdriver.ChromeOptions()
+            options.add_argument('headless')
+            options.add_argument('--enable-javascript')
+            #user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36"
+            #options.add_argument(f"user-agent={user_agent}")
+            driver = webdriver.Chrome(options=options)
+            driver.get(req_url)
+            WebDriverWait(driver, 10).until(EC.visibility_of_all_elements_located((By.XPATH, '//td[@class="ng-star-inserted"]')))
+            html = driver.page_source
+            with open(html_path, 'w') as f:
+                f.write(html)
+            driver.quit()
+            time.sleep(30)
+        # read the csv
+        df = pd.read_html(html_path)
+quit()
 
 apt_weather_data = np.empty((apt_day_data.shape[0], len(features)))
 #set defaults for values if missing
