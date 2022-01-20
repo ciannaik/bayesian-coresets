@@ -2,11 +2,11 @@
 
 for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT" "SVI"
 do
-    for ID in 1 2 3
+    for ID in 1 2 3 4 5
     do
-    	for M in 50 100 200
+    	for M in 50 100 500 1000
         do
-       		python3 main.py --alg $alg --trial $ID --coreset_size $M --data_num 10000 --data_dim 50 run
+       		python3 main.py --alg $alg --trial $ID --coreset_size $M run
        	done
     done
 done
