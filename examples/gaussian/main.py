@@ -30,7 +30,7 @@ def plot(arguments):
 
 def run(arguments):
     # suffix for printouts
-    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', numdata: ' + str(arguments.data_num) + ', dimdata: ' + str(arguments.data_dim) + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
+    log_suffix = '(coreset size: ' + str(arguments.coreset_size) + ', alg: ' + arguments.alg + ', trial: ' + str(arguments.trial)+')'
 
     #######################################
     #######################################
@@ -67,8 +67,11 @@ def run(arguments):
     #######################################
     #######################################
 
-    print('Loading/creating dataset ' + log_suffix)
-    X = model.gen_synthetic(arguments.data_num, arguments.data_dim, sig)
+    print('Loading dataset ' + log_suffix)
+    dataset_filename = "../data/synth_gauss.npy"
+    X = np.load(dataset_filename)
+    print("Dataset shape:")
+    print(X.shape)
 
     ####################################################################
     ####################################################################
@@ -99,7 +102,7 @@ def run(arguments):
     #######################################
 
     print('Checking for cached full samples ' + log_suffix)
-    cache_filename = 'full_cache/full_samples_' + str(arguments.data_num) + '_' + str(arguments.data_dim) + '.npz'
+    cache_filename = 'full_cache/full_samples.npz'
     if os.path.exists(cache_filename):
         print('Cache exists, loading')
         tmp__ = np.load(cache_filename)
@@ -110,7 +113,7 @@ def run(arguments):
         full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
         if not os.path.exists('full_cache'):
             os.mkdir('full_cache')
-        # np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
+        np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
 
     #######################################
     #######################################
@@ -205,8 +208,6 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--data_num', type=int, default='10000', help='Dataset size/number of examples')
-parser.add_argument('--data_dim', type=int, default = '50', help="The dimension of the multivariate normal distribution to use for this experiment")
 parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
