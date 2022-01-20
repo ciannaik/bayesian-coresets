@@ -32,7 +32,7 @@ def gauss_mmd(x, y, sigma=1):
     # do this computation in blocks to avoid heavy memory requirements
     blk = 500
 
-    print('gauss_mmd KXX')
+    print('KXX')
     KXX = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -44,7 +44,7 @@ def gauss_mmd(x, y, sigma=1):
     sys.stdout.write("\n")
     sys.stdout.flush()
 
-    print('gauss_mmd KYY')
+    print('KYY')
     KYY = 0.
     for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
@@ -56,7 +56,7 @@ def gauss_mmd(x, y, sigma=1):
     sys.stdout.write("\n")
     sys.stdout.flush()
 
-    print('gauss_mmd KXY')
+    print('KXY')
     KXY = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -96,7 +96,7 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     # do this computation in blocks to avoid heavy memory requirements
     blk = 500
 
-    print('imq_mmd KXX')
+    print('KXX')
     KXX = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -108,7 +108,7 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     sys.stdout.write("\n")
     sys.stdout.flush()
 
-    print('imq_mmd KYY')
+    print('KYY')
     KYY = 0.
     for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
@@ -120,7 +120,7 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     sys.stdout.write("\n")
     sys.stdout.flush()
 
-    print('imq_mmd KXY')
+    print('KXY')
     KXY = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -151,57 +151,66 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     return KXX/x.shape[0]**2 + KYY/y.shape[0]**2 - 2*KXY/(x.shape[0]*y.shape[0])
 
 
-def gauss_stein(x, scores, sigma=1):
+
+def _gauss_stein(x, y, score_x, score_y, sigma, beta): # beta is unused here, but we keep for consistent api
     _, p = x.shape
-    # do this computation in blocks to avoid heavy memory requirements
-    blk = 500
+    d = x[:, None, :] - y[None, :, :]
+    dists = (d ** 2).sum(axis=-1)
+    k = np.exp(-dists / sigma**2 / 2)
+    scalars = score_x.dot(score_y.T)
+    scores_diffs = score_x[:, None, :] - score_y[None, :, :]
+    diffs = (d * scores_diffs).sum(axis=-1)
+    der2 = p - dists / sigma**2
+    return k * (scalars + diffs / sigma**2 + der2 / sigma**2)
 
-    print('gauss_stein')
-
-    KSD = 0.
-    for i in range(0, x.shape[0], blk):
-        sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
-        sys.stdout.flush()
-        for j in range(0, x.shape[0], blk):
-            d = x[i:(i+blk), None, :] - x[None, j:(j+blk), :]
-            dists = (d ** 2).sum(axis=-1)
-            k = np.exp(-dists / sigma**2 / 2)
-            scalars = scores[i:(i+blk),:].dot(scores[j:(j+blk),:].T)
-            scores_diffs = scores[i:(i+blk), None, :] - scores[None, j:(j+blk), :]
-            diffs = (d * scores_diffs).sum(axis=-1)
-            der2 = p - dists / sigma**2
-            stein_kernel = k * (scalars + diffs / sigma**2 + der2 / sigma**2)
-            KSD += stein_kernel.sum()
-    sys.stdout.write("\n")
-    sys.stdout.flush()
-    return KSD / (x.shape[0] ** 2)
-
-
-def imq_stein(x, scores, sigma=1, beta=0.5):
+def _imq_stein(x, y, score_x, score_y, sigma, beta):
     _, p = x.shape
+    d = x[:, None, :] - y[None, :, :]
+    dists = (d ** 2).sum(axis=-1)
+    res = 1 + dists /(2.*sigma**2)
+    kxy = res ** (-beta)
+    scores_d = score_x[:, None, :] - score_y[None, :, :]
+    temp = d * scores_d
+    dkxy = 2 * beta /(2.*sigma**2) * (res) ** (-beta - 1) * temp.sum(axis=-1)
+    d2kxy = 2 * (
+        beta / (2.*sigma**2) * (res) ** (-beta - 1) * p
+        - 2 * beta * (beta + 1) /(2.*sigma**2)** 2 * dists * res ** (-beta - 2)
+    )
+    return score_x.dot(score_y.T) * kxy + dkxy + d2kxy
+
+
+def _stochastic_stein_blocked(x, score_estimator, _ksd, sigma, beta):
     # do this computation in blocks to avoid heavy memory requirements
+    # and since computing the matrix of scores can be expensive even with block computation,
+    # we will do this iteratively using a running stochastic estimate (with std error estimation to know when to quit)
     blk = 500
-
-    print("imq_stein")
-
-    KSD = 0.
-    for i in range(0, x.shape[0], blk):
-        sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
+    ct = 0.
+    mom1 = 0.
+    mom2 = 0.
+    while True:
+        print(f'KSD estimation iteration {ct+1}')
+        scores = score_estimator(x, blk)
+        KSD = 0.
+        for i in range(0, x.shape[0], blk):
+            sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
+            sys.stdout.flush()
+            for j in range(0, x.shape[0], blk):
+                KSD += _ksd(x[i:(i+blk), :], x[j:(j+blk), :], scores[i:(i+blk),:], scores[j:(j+blk),:], sigma, beta).sum()
+        sys.stdout.write("\n")
         sys.stdout.flush()
-        for j in range(0, x.shape[0], blk):
-            d = x[i:(i+blk), None, :] - x[None, j:(j+blk), :]
-            dists = (d ** 2).sum(axis=-1)
-            res = 1 + dists /(2.*sigma**2)
-            kxy = res ** (-beta)
-            scores_d = scores[i:(i+blk), None, :] - scores[None, j:(j+blk), :]
-            temp = d * scores_d
-            dkxy = 2 * beta /(2.*sigma**2) * (res) ** (-beta - 1) * temp.sum(axis=-1)
-            d2kxy = 2 * (
-                beta / (2.*sigma**2) * (res) ** (-beta - 1) * p
-                - 2 * beta * (beta + 1) /(2.*sigma**2)** 2 * dists * res ** (-beta - 2)
-            )
-            stein_kernel = scores[i:(i+blk),:].dot(scores[j:(j+blk),:].T) * kxy + dkxy + d2kxy
-            KSD += stein_kernel.sum()
-    sys.stdout.write("\n")
-    sys.stdout.flush()
-    return KSD / (x.shape[0] ** 2)
+        KSD /= (x.shape[0] ** 2)
+        ct += 1
+        mom1 += KSD
+        mom2 += KSD**2
+        KSD_est = mom1/ct
+        KSD_std = np.sqrt(mom2/ct - (mom1/ct)**2)/np.sqrt(ct)
+        print(f'KSD estimate: {KSD_est} std err estimate: {KSD_std}')
+        if ct > 1 and KSD_std/KSD_est < 0.01:
+            break
+    return mom1/ct
+
+def gauss_stein(x, score_estimator, sigma=1, beta=None):
+    return _stochastic_stein_blocked(x, score_estimator, _gauss_stein, sigma, beta)
+
+def imq_stein(x, score_estimator, sigma=1, beta=0.5):
+    return _stochastic_stein_blocked(x, score_estimator, _gauss_stein, sigma, beta)

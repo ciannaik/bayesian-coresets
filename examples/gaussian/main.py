@@ -39,8 +39,10 @@ def run(arguments):
     #######################################
 
     # check if result already exists for this run, and if so, quit
-    if results.check_exists(arguments):
+    cached_results_file = results.check_exists(arguments)
+    if cached_results_file is not None:
         print('Results already exist for arguments ' + str(arguments))
+        print('In cache file: ' + cached_results_file)
         print('Quitting.')
         quit()
 
@@ -59,7 +61,7 @@ def run(arguments):
     #change these to change the prior / likelihood
     mu0 = 0.
     sig0 = 1.
-    sig = 1.
+    sig = 100.
 
     #######################################
     #######################################
@@ -68,7 +70,7 @@ def run(arguments):
     #######################################
 
     print('Loading dataset ' + log_suffix)
-    dataset_filename = "../data/synth_gauss.npy"
+    dataset_filename = f"../data/{arguments.dataset}.npy"
     X = np.load(dataset_filename)
     print("Dataset shape:")
     print(X.shape)
@@ -102,6 +104,8 @@ def run(arguments):
     #######################################
 
     print('Checking for cached full samples ' + log_suffix)
+    if not os.path.exists('full_cache'):
+        os.mkdir('full_cache')
     cache_filename = 'full_cache/full_samples.npz'
     if os.path.exists(cache_filename):
         print('Cache exists, loading')
@@ -111,8 +115,6 @@ def run(arguments):
     else:
         print('Cache doesn\'t exist, running sampler')
         full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
-        if not os.path.exists('full_cache'):
-            os.mkdir('full_cache')
         np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
 
     #######################################
@@ -140,27 +142,41 @@ def run(arguments):
             'LAP' : lapl,
             'GIGA': giga,
             'UNIF': unif,
-            'IHT':iht}
-    alg = algs[arguments.alg]
+            'IHT' : iht,
+            'FULL' : None}
+    alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
 
 
-    print('Building ' + log_suffix)
-    # Recursive alg needs to be run fully each time
-    t0 = time.perf_counter()
-    alg.build(arguments.coreset_size)
-    t_build = time.perf_counter() - t0
+    if alg:
+        print('Building ' + log_suffix)
+        # Recursive alg needs to be run fully each time
+        t0 = time.perf_counter()
+        alg.build(arguments.coreset_size)
+        t_build = time.perf_counter() - t0
 
 
-    print('Sampling ' + log_suffix)
+        print('Sampling ' + log_suffix)
 
-    __get = getattr(alg, "get", None)
-    if callable(__get):
-        wts, pts, idcs = alg.get()
-        # Use MCMC on the coreset, measure time taken
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+        __get = getattr(alg, "get", None)
+        if callable(__get):
+            wts, pts, idcs = alg.get()
+            # Use MCMC on the coreset, measure time taken
+            approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+        else:
+            approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
     else:
-        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
-
+        t_build = 0.
+        print('Checking for cached comparison full samples ' + log_suffix)
+        cache_filename = f'full_cache/full_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
@@ -172,25 +188,28 @@ def run(arguments):
     Sig_full = np.cov(full_samples, rowvar=False)
     LSig_full = np.linalg.cholesky(Sig_full)
     LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
-    # compute the relative 2 norm error for mean and covariance
+    # compute the relative 2 norm error for mean and variance cholesky factor
     mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-    Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
+    Sig_err = np.sqrt(((np.sqrt(np.diag(Sig_approx)) - np.sqrt(np.diag(Sig_full)))**2).sum())/np.sqrt(((np.sqrt(np.diag(Sig_full)))**2).sum())
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
     # compute mmd discrepancies
-    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=0.5)
-    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=0.5)
+    print('Estimating Gaussian MMD')
+    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples, sigma=1.)
+    print('Estimating IMQ MMD')
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples, sigma=1., beta=0.5)
     # compute stein discrepancies
-    scores_approx = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
-    gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
-    imq_stein = stein.imq_stein(approx_samples, scores_approx)
-
+    score_estimator = lambda samps, sz : X.shape[0]/sz*model.grad_log_joint(X[np.random.randint(X.shape[0], size=sz), :], samps, np.ones(sz), sig, mu0, sig0)
+    print('Estimating Gaussian Stein')
+    gauss_stein = stein.gauss_stein(approx_samples, score_estimator, sigma=1.)
+    print('Estimating IMQ Stein')
+    imq_stein = stein.imq_stein(approx_samples, score_estimator, sigma=1., beta=0.5)
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-                 gauss_stein=gauss_stein, imq_stein=imq_stein)
+                gauss_stein=gauss_stein) #, imq_stein=imq_stein)
     print('')
     print('')
 
@@ -208,8 +227,9 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
+parser.add_argument('--dataset', type=str, default='synth_gauss', choices =['synth_gauss'])
 parser.add_argument('--alg', type=str, default='UNIF',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
