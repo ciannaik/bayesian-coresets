@@ -11,6 +11,12 @@ def gen_synthetic(n, d, d_active, sig):
   y = X.dot(th) + sig*np.random.randn(n)
   return X, y
 
+def load_data(dnm):
+  data = np.load(dnm)
+  X = data['X']
+  Y = data['y']
+  return X, Y
+
 def log_likelihood(z, prm):
     z = np.atleast_2d(z)
     x = z[:, :-1]
