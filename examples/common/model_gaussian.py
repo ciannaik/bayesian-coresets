@@ -28,6 +28,14 @@ def grad_log_prior(th, mu0, sig0):
 def grad_log_joint(x, th, wts, sig, mu0, sig0):
   return (wts[:, np.newaxis, np.newaxis]*grad_log_likelihood(x, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
 
+def grad_log_joint(x, th, wts, sig, mu0, sig0):
+  # do this computation in x-blocks to avoid high memory usage in the large N regime
+  blk = 100
+  grd = grad_log_prior(th, mu0, sig0)
+  for i in range(0, x.shape[0], blk):
+    grd += (wts[i:(i+blk), np.newaxis, np.newaxis]*grad_log_likelihood(x[i:(i+blk), :], th, sig)).sum(axis=0)
+  return grd
+
 def hess_log_likelihood(x, th, sig):
   th = np.atleast_2d(th)
   return -np.ones((x.shape[0], th.shape[0], th.shape[1]))/sig**2
@@ -37,7 +45,12 @@ def hess_log_prior(th, mu0, sig0):
   return -np.ones((th.shape[0], th.shape[1]))/sig0**2
 
 def hess_log_joint(x, th, wts, sig, mu0, sig0):
-  return (wts[:, np.newaxis, np.newaxis]*hess_log_likelihood(x, th, sig)).sum(axis=0) + hess_log_prior(th, mu0, sig0)
+  # do this computation in x-blocks to avoid high memory usage in the large N regime
+  blk = 100
+  hess = hess_log_prior(th, mu0, sig0)
+  for i in range(0, x.shape[0], blk):
+    hess += (wts[i:(i+blk), np.newaxis, np.newaxis]*hess_log_likelihood(x[i:(i+blk),:], th, sig)).sum(axis=0)
+  return hess
 
 def weighted_post(mu0, sig0, sig, x, w):
   sigp = np.sqrt(1./(1./sig0**2 + w.sum()/sig**2))
