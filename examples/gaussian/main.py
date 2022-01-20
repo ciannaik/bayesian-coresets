@@ -211,7 +211,7 @@ plot_subparser.set_defaults(func=plot)
 parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--samples_inference", type=int, default=2000,
+parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
