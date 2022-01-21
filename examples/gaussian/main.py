@@ -23,7 +23,7 @@ from bayesiancoresets.snnls import IHT
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
-    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
+    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference'])
     # call the generic plot function
     plotting.plot(arguments, df)
 
@@ -247,7 +247,7 @@ parser.add_argument('--dataset', type=str, default='synth_gauss', choices =['syn
 parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--samples_inference", type=int, default=10000,
+parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")

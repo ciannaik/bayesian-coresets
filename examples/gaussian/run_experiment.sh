@@ -1,18 +1,21 @@
 #!/bin/bash
 
-# TODO first run FULL in a loop for one coreset size
-# then run FULL in parallel for all other coreset sizes (same result) 
-# then run every other method in parallel
+## Full inference run for each trial (to establish a noise floor for evaluation metrics)
+#for ID in {1..10}
+#do
+#    python3 main.py --samples_inference 1000 --alg FULL --trial $ID run
+#done
 
-#for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT"
-#for alg in "UNIF" "FULL"
-for alg in "LAP"
+for alg in "GIGA" "IHT"
 do
     for ID in {1..10}
     do
     	for M in 10 50 100 500 1000 5000
         do
-       		python3 main.py --samples_inference 1000 --alg $alg --trial $ID --coreset_size $M run
+       		python3 main.py --samples_inference 1000 --alg $alg --trial $ID --coreset_size $M --proj_dim 20 run
        	done
     done
 done
+
+
+#for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT"
