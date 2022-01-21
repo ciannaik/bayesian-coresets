@@ -128,9 +128,9 @@ def run(arguments):
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     unif = bc.UniformSamplingCoreset(X)
     giga = bc.HilbertCoreset(X, projector)
-    sparsevi = bc.SparseVICoreset(X, projector, n_subsample_select=1000, n_subsample_opt=1000,
+    sparsevi = bc.SparseVICoreset(X, projector, n_subsample_select=arguments.n_subsample, n_subsample_opt=arguments.n_subsample,
                                   opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.newton_opt_itrs)
+    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.newton_opt_itrs, n_subsample_opt=arguments.n_subsample)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
@@ -215,8 +215,9 @@ def run(arguments):
     gauss_mmd = stein.gauss_mmd(approx_samples, full_samples, sigma=1.)
     print('Estimating IMQ MMD')
     imq_mmd = stein.imq_mmd(approx_samples, full_samples, sigma=1., beta=0.5)
+
     # compute stein discrepancies
-    score_estimator = lambda samps, sz : X.shape[0]/sz*model.grad_log_joint(X[np.random.randint(X.shape[0], size=sz), :], samps, np.ones(sz), sig, mu0, sig0)
+    score_estimator = lambda samps, sz : X.shape[0]/sz*model.grad_log_likelihood(X, samps, np.ones(X.shape[0]), sig, mu0, sig0).sum(axis=0) + model.grad_log_prior(samps, mu0, sig0)
     print('Estimating Gaussian Stein')
     gauss_stein = stein.gauss_stein(approx_samples, score_estimator, sigma=1.)
     print('Estimating IMQ Stein')
@@ -225,7 +226,7 @@ def run(arguments):
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-                gauss_stein=gauss_stein) #, imq_stein=imq_stein)
+                gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
 
@@ -251,11 +252,11 @@ parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
+parser.add_argument("--n_subsample", type=int, default=10000,
+                    help="The number of data points used to compute optimization steps")
 parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
-                    help="Number of optimization iterations (for SVI)")
-parser.add_argument('--newton_opt_itrs', type=str, default=20,
-                    help="Number of optimization iterations (for QNC)")
+                    help="Number of optimization iterations")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
