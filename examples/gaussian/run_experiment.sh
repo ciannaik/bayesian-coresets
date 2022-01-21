@@ -5,20 +5,20 @@
 # Both of these cache results and re-use across coreset sizes later on during plotting
 for alg in "FULL" "LAP"
 do
-    for ID in {4..6}
+    for ID in {1..10}
     do
-        python3 main.py --samples_inference 1000 --alg $alg --trial $ID run
+        python3 main.py --samples_inference 10000 --alg $alg --trial $ID --coreset_size 10 run
     done
 done
 
 # Run all the other algorithms
-for alg in "UNIF" "GIGA" "IHT"
+for alg in "UNIF" "GIGA" "IHT" "FULL" "LAP"
 do
-    for ID in {4..6}
+    for ID in {1..10}
     do
-    	for M in 10 50 100 500 1000 5000
+    	for M in 10 50 100 500 1000
         do
-       		python3 main.py --samples_inference 1000 --alg $alg --trial $ID --coreset_size $M --proj_dim 20 run
+       		python3 main.py --samples_inference 10000 --alg $alg --trial $ID --coreset_size $M --proj_dim 20 run
        	done
     done
 done
@@ -26,7 +26,7 @@ done
 # Run all the other algorithms
 #for alg in "QNC"
 #do
-#    for ID in {1..3}
+#    for ID in {1..10}
 #    do
 #    	for M in 10 50 100 500 1000 5000
 #        do

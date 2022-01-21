@@ -193,11 +193,27 @@ def _imq_stein(x, y, score_x, score_y, sigma, beta):
     return score_x.dot(score_y.T) * kxy + dkxy + d2kxy
 
 
-def _stochastic_stein_blocked(x, score_estimator, _ksd, sigma, beta):
+def _stein_blocked(x, scores, _ksd, sigma, beta):
     # do this computation in blocks to avoid heavy memory requirements
     # and since computing the matrix of scores can be expensive even with block computation,
     # we will do this iteratively using a running stochastic estimate (with std error estimation to know when to quit)
     blk = 500
+    KSD = 0.
+    for i in range(0, x.shape[0], blk):
+        sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
+        sys.stdout.flush()
+        for j in range(0, x.shape[0], blk):
+            KSD += _ksd(x[i:(i+blk), :], x[j:(j+blk), :], scores[i:(i+blk),:], scores[j:(j+blk),:], sigma, beta).sum()
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    KSD /= (x.shape[0] ** 2)
+    return KSD
+
+def _stochastic_stein_blocked(x, score_estimator, _ksd, sigma, beta):
+    # do this computation in blocks to avoid heavy memory requirements
+    # and since computing the matrix of scores can be expensive even with block computation,
+    # we will do this iteratively using a running stochastic estimate (with std error estimation to know when to quit)
+    blk = 5000
     ct = 0.
     mom1 = 0.
     mom2 = 0.
@@ -223,12 +239,12 @@ def _stochastic_stein_blocked(x, score_estimator, _ksd, sigma, beta):
         KSD_est = mom1/ct
         KSD_std = np.sqrt(mom2/ct - (mom1/ct)**2)/np.sqrt(ct)
         print(f'KSD estimate: {KSD_est} std err estimate: {KSD_std}')
-        if ct > 1 and KSD_std/KSD_est < 0.01:
+        if ct > 1 and np.fabs(KSD_std/KSD_est) < 0.1:
             break
     return mom1/ct
 
-def gauss_stein(x, score_estimator, sigma=1, beta=None):
-    return _stochastic_stein_blocked(x, score_estimator, _gauss_stein, sigma, beta)
+def gauss_stein(x, scores, sigma=1, beta=None):
+    return _stein_blocked(x, scores, _gauss_stein, sigma, beta)
 
-def imq_stein(x, score_estimator, sigma=1, beta=0.5):
-    return _stochastic_stein_blocked(x, score_estimator, _gauss_stein, sigma, beta)
+def imq_stein(x, scores, sigma=1, beta=0.5):
+    return _stein_blocked(x, scores, _imq_stein, sigma, beta)

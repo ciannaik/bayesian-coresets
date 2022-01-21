@@ -130,7 +130,7 @@ def run(arguments):
     giga = bc.HilbertCoreset(X, projector)
     sparsevi = bc.SparseVICoreset(X, projector, n_subsample_select=arguments.n_subsample, n_subsample_opt=arguments.n_subsample,
                                   opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.newton_opt_itrs, n_subsample_opt=arguments.n_subsample)
+    newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.opt_itrs, n_subsample_opt=arguments.n_subsample)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
@@ -206,27 +206,36 @@ def run(arguments):
     LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
     # compute the relative 2 norm error for mean and variance cholesky factor
     mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-    Sig_err = np.sqrt(((np.sqrt(np.diag(Sig_approx)) - np.sqrt(np.diag(Sig_full)))**2).sum())/np.sqrt(((np.sqrt(np.diag(Sig_full)))**2).sum())
+    Sig_diag_err = np.sqrt(((np.sqrt(np.diag(Sig_approx)) - np.sqrt(np.diag(Sig_full)))**2).sum())/np.sqrt(((np.sqrt(np.diag(Sig_full)))**2).sum())
+    Sig_err = np.linalg.norm(LSig_full - LSig_approx, ord=2)/np.linalg.norm(LSig_full, ord=2) 
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
-    # compute mmd discrepancies
-    print('Estimating Gaussian MMD')
-    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples, sigma=1.)
-    print('Estimating IMQ MMD')
-    imq_mmd = stein.imq_mmd(approx_samples, full_samples, sigma=1., beta=0.5)
 
-    # compute stein discrepancies
-    score_estimator = lambda samps, sz : X.shape[0]/sz*model.grad_log_likelihood(X, samps, np.ones(X.shape[0]), sig, mu0, sig0).sum(axis=0) + model.grad_log_prior(samps, mu0, sig0)
-    print('Estimating Gaussian Stein')
-    gauss_stein = stein.gauss_stein(approx_samples, score_estimator, sigma=1.)
-    print('Estimating IMQ Stein')
-    imq_stein = stein.imq_stein(approx_samples, score_estimator, sigma=1., beta=0.5)
+
+    ## compute mmd discrepancies
+    #print('Estimating Gaussian MMD')
+    #gauss_mmd = stein.gauss_mmd(approx_samples, full_samples, sigma=.3)
+    #print(f"MMD = {gauss_mmd}")
+    #print('Estimating IMQ MMD')
+    #imq_mmd = stein.imq_mmd(approx_samples, full_samples, sigma=1., beta=0.5)
+    #print(f"MMD = {imq_mmd}")
+
+    ## compute stein discrepancies
+    #print('Computing scores for stein')
+    #scores = model.grad_log_joint(X, approx_samples, np.ones(X.shape[0]), sig, mu0, sig0)
+    #print('Estimating Gaussian Stein')
+    #gauss_stein = stein.gauss_stein(approx_samples, scores, sigma=1.)
+    #print(f"KSD = {gauss_stein}")
+    #print('Estimating IMQ Stein')
+    #imq_stein = stein.imq_stein(approx_samples, scores, sigma=1., beta=0.5)
+    #print(f"KSD = {imq_stein}")
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-                gauss_stein=gauss_stein, imq_stein=imq_stein)
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_diag_err=Sig_diag_err, Sig_err=Sig_err)
+                #, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd) #,
+                #gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
 
@@ -248,7 +257,7 @@ parser.add_argument('--dataset', type=str, default='synth_gauss', choices =['syn
 parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--samples_inference", type=int, default=1000,
+parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
