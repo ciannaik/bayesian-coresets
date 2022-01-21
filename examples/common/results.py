@@ -31,12 +31,12 @@ def find_matching(to_match, results_folder = 'results/', log_file = 'manifest.cs
 def check_exists(arguments, results_folder = 'results/', log_file = 'manifest.csv'):
     matching_hashes = find_matching(vars(arguments), results_folder, log_file)
     if len(matching_hashes) == 0:
-        return False
+        return None
     if len(matching_hashes) > 1:
         raise ValueError(f"ERROR: Multiple matching results cache files for arguments. Arguments: {arguments} Matching hashes: {matching_hashes}")
     if os.path.exists(os.path.join(results_folder, matching_hashes[0]+'.csv')):
-        return True
-    return False
+        return os.path.join(results_folder, matching_hashes[0]+'.csv')
+    return None
 
 def load_matching(arguments, match = [], results_folder = 'results/', log_file = 'manifest.csv'):
     to_match = {key : val for (key,val) in vars(arguments).items() if key in match}
@@ -78,7 +78,8 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
     for key, val in kwargs.items():
         if key in nsdict:
             raise ValueError(f"ERROR: key {key} (val {val}) already in namespace; cannot save this as data. Namespace: {arguments}")
-        nsdict[key] = val
+        if key != 'func':
+            nsdict[key] = val
 
     #save the df, overwriting a previous result
     df = pd.DataFrame({key:[val] for (key,val) in nsdict.items()})

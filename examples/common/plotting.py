@@ -1,5 +1,5 @@
 from bokeh.models import FuncTickFormatter
-import bokeh.palettes 
+import bokeh.palettes
 import numpy as np
 import bokeh.plotting as bkp
 
@@ -71,13 +71,13 @@ def postprocess_plot(fig, legend_font_size, orientation='vertical', location='to
   fig.ygrid.grid_line_color=None
 
 def plot(arguments, df):
-  fig = bkp.figure(title=arguments.plot_title, 
-                 y_axis_type=arguments.plot_y_type, 
-                 x_axis_type=arguments.plot_x_type, 
+  fig = bkp.figure(title=arguments.plot_title,
+                 y_axis_type=arguments.plot_y_type,
+                 x_axis_type=arguments.plot_x_type,
                  plot_width=arguments.plot_width,
-                 plot_height=arguments.plot_height, 
-                 x_axis_label=arguments.plot_x if arguments.plot_x_label is None else arguments.plot_x_label, 
-                 y_axis_label=arguments.plot_y if arguments.plot_y_label is None else arguments.plot_y_label, 
+                 plot_height=arguments.plot_height,
+                 x_axis_label=arguments.plot_x if arguments.plot_x_label is None else arguments.plot_x_label,
+                 y_axis_label=arguments.plot_y if arguments.plot_y_label is None else arguments.plot_y_label,
                  toolbar_location='right' if arguments.plot_toolbar else None)
 
   preprocess_plot(fig, arguments.plot_fontsize, arguments.plot_x_type == 'log', arguments.plot_y_type == 'log')
@@ -114,24 +114,26 @@ def scatter(fig, df, arguments, clr = pal[0], legend = None):
   #for j in range(df.shape[0]):
   #  err_xs.append((xy10.iloc[j, arguments.plot_x], xy10.iloc[j, arguments.plot_x]))
   #  err_ys.append((xy10.iloc[j, arguments.plot_y], xy10.iloc[j, arguments.plot_x]))
-  #  err_ys.append((np.percentile(y_all, 25, axis=0)[j], np.percentile(y_all, 75, axis=0)[j])) 
+  #  err_ys.append((np.percentile(y_all, 25, axis=0)[j], np.percentile(y_all, 75, axis=0)[j]))
 
   #fig.multi_line(err_xs, err_ys, color=pal[i-1])
 
   #fig.scatter(xy50[arguments.plot_x], xy50[arguments.plot_y], color=pal[0], line_width=5)
-  
+
 def line(fig, df, arguments, clr = pal[0], legend = None):
-  xy50 = df.groupby(arguments.groupby, as_index=False).quantile(.5)
-  xy10 = df.groupby(arguments.groupby, as_index=False).quantile(.1)
-  xy90 = df.groupby(arguments.groupby, as_index=False).quantile(.9)
+  xy50 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.5)
+  xy10 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.1)
+  xy90 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.9)
   fig.line(xy50[arguments.plot_x], xy50[arguments.plot_y], color=clr, line_width=5, legend_label = legend)
+  fig.line(xy10[arguments.plot_x], xy10[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
+  fig.line(xy90[arguments.plot_x], xy90[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
 
   #err_xs = []
   #err_ys = []
-  #for j in range(df.shape[0]):
-  #  err_xs.append((xy10.iloc[j, arguments.plot_x], xy10.iloc[j, arguments.plot_x]))
-  #  err_ys.append((xy10.iloc[j, arguments.plot_y], xy10.iloc[j, arguments.plot_x]))
-  #  err_ys.append((np.percentile(y_all, 25, axis=0)[j], np.percentile(y_all, 75, axis=0)[j])) 
+  #for j in range(xy10.shape[0]):
+  #  err_xs.append((xy10[arguments.plot_x].iloc[j], xy10[arguments.plot_x].iloc[j]))
+  #  err_ys.append((xy10[arguments.plot_y].iloc[j], xy10[arguments.plot_y].iloc[j]))
+  #  #err_ys.append((np.percentile(y_all, 25, axis=0)[j], np.percentile(y_all, 75, axis=0)[j]))
 
   #fig.multi_line(err_xs, err_ys, color=pal[i-1])
 
@@ -158,25 +160,25 @@ def plot_medianquartiles(plot, x, ys, color, linewidth, alpha, line_dash, name):
   #plot.patch(np.hstack((x, x[::-1])), np.hstack(( ys25, ys75[::-1] )), color=color, line_width=linewidth/2, line_dash=line_dash, alpha=alpha, legend=nm)
 
 def plot_gaussian_projected2d(dim, mu, sig, plot,
-                              color=pal[7], dotsize=20, linewidth=10, dotalpha=1, linealpha=1, line_dash='solid', name="POST", 
+                              color=pal[7], dotsize=20, linewidth=10, dotalpha=1, linealpha=1, line_dash='solid', name="POST",
                               num_pts_for_circle_approx = 10,seed = 1):
   #set seed:
   np.random.seed(int(seed))
 
-  #get two vectors that form an orthonormal basis: 
+  #get two vectors that form an orthonormal basis:
   x = np.random.randn(dim,1)
   x = x/np.linalg.norm(x)
-  
+
   y = np.random.randn(dim,1)
   y = y-x@x.T@y
   y = y/np.linalg.norm(y)
-  
+
   #make the orthonormal basis (as a matrix)
   A = np.append(x,y, axis=1)
-  
+
   #project the mean mu and variance sig onto this basis
   mu = A.T@mu
-  sig = A.T@sig@A 
+  sig = A.T@sig@A
 
   #plot the result
   plot_gaussian(plot,mu,sig,0,color=color,dotsize=dotsize,linewidth=linewidth,dotalpha=dotalpha,linealpha=linealpha,

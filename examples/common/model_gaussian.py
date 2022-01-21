@@ -25,8 +25,8 @@ def grad_log_prior(th, mu0, sig0):
   th = np.atleast_2d(th)
   return -(th - mu0)/sig0**2
 
-def grad_log_joint(x, th, wts, sig, mu0, sig0):
-  return (wts[:, np.newaxis, np.newaxis]*grad_log_likelihood(x, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
+#def grad_log_joint(x, th, wts, sig, mu0, sig0):
+#  return (wts[:, np.newaxis, np.newaxis]*grad_log_likelihood(x, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
 
 def grad_log_joint(x, th, wts, sig, mu0, sig0):
   # do this computation in x-blocks to avoid high memory usage in the large N regime
@@ -43,6 +43,9 @@ def hess_log_likelihood(x, th, sig):
 def hess_log_prior(th, mu0, sig0):
   th = np.atleast_2d(th)
   return -np.ones((th.shape[0], th.shape[1]))/sig0**2
+
+#def hess_log_joint(x, th, wts, sig, mu0, sig0):
+#  return (wts[:, np.newaxis, np.newaxis]*hess_log_likelihood(x, th, sig)).sum(axis=0) + hess_log_prior(th, mu0, sig0)
 
 def hess_log_joint(x, th, wts, sig, mu0, sig0):
   # do this computation in x-blocks to avoid high memory usage in the large N regime
