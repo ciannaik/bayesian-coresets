@@ -10,11 +10,13 @@ def _callback(x, obj):
     __nf += 1
 
 class LaplaceApprox(object):
-    def __init__(self, log_joint, grad_log_joint, th0, hess_log_joint=None, diag_hess_log_joint=None, trials=10):
+    def __init__(self, log_joint, grad_log_joint, th0, bounds=None, hess_log_joint=None, diag_hess_log_joint=None,
+                 trials=10):
         self.log_joint = log_joint
         self.grad_log_joint = grad_log_joint
         self.trials = trials
         self.th0 = th0
+        self.bounds = bounds
         if (hess_log_joint is None and diag_hess_log_joint is None) or ((hess_log_joint is not None) and (diag_hess_log_joint is not None)):
             raise ValueError("ERROR: Exactly one of hess_log_joint or diag_hess_log_joint must be specified")
         if hess_log_joint is not None:
@@ -29,11 +31,19 @@ class LaplaceApprox(object):
         for i in range(self.trials):
             try:
                 res = minimize(lambda mu: -self.log_joint(mu), _th0,
-                        jac=lambda mu: -self.grad_log_joint(mu), callback=lambda x : _callback(x, self.log_joint))
+                        jac=lambda mu: -self.grad_log_joint(mu), callback=lambda x : _callback(x, self.log_joint),
+                               bounds = self.bounds)
                 self.th = res.x
             except Exception as e:
                 print(e)
                 _th0 += (np.sqrt((_th0 ** 2).sum()) + 0.1) * 0.1 * np.random.randn(_th0.shape[0])
+                # clip _th0 to satisfy bounds
+                if self.bounds is not None:
+                    lbs = [b[0] for b in self.bounds]
+                    ubs = [b[1] for b in self.bounds]
+                    _th0 = np.clip(_th0,lbs,ubs)
+
+                print("current theta0: {}".format(_th0))
                 continue
             break
         if self.diag:

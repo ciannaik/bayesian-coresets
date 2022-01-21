@@ -65,11 +65,15 @@ def run(arguments):
     b0 = 1
 
     # set the synthetic data params (if we're using synthetic data)
-    N_synth = 300
-    d_synth = 6
-    d_active = 2
+    N_synth = 10000
+    d_synth = 12
+    d_active = 4
     sig = 1.
 
+    # set bounds for Laplace optimization
+    # theta unconstrained, lambda, sigma, tau must be >0
+    eps = 1e-3
+    param_bounds = ((-np.inf,np.inf),)*d_synth + ((eps,np.inf),)*d_synth + ((eps,np.inf),) + ((eps,np.inf),)
     #######################################
     #######################################
     ############# Load Dataset ############
@@ -77,7 +81,7 @@ def run(arguments):
     #######################################
 
     print('Loading/creating dataset ' + log_suffix)
-    if arguments.dataset == 'synth_sparsereg_new':
+    if arguments.dataset == 'synth_sparsereg':
         X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
         # dataset_filename = '../data/' + arguments.dataset + '.npz'
         # np.savez(dataset_filename, X=X, y=Y)
@@ -150,6 +154,7 @@ def run(arguments):
     lapl = laplace.LaplaceApprox(lambda th: model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
                                  lambda th: model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0, :],
                                  np.hstack((np.zeros(Z.shape[1]-1),(np.ones(Z.shape[1]-1)),1,1)),
+                                 bounds=param_bounds,
                                  hess_log_joint=lambda th: model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0,
                                                                                 b0)[0, :, :])
     iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
@@ -227,16 +232,16 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--dataset', type=str, default="synth_sparsereg",
+parser.add_argument('--dataset', type=str, default="synth_sparsereg_large",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='UNIF',
+parser.add_argument('--alg', type=str, default='LAP',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=500,
+parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=50, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=500, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -244,7 +249,7 @@ parser.add_argument('--newton_opt_itrs', type=str, default=20,
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=15,
+parser.add_argument('--trial', type=int, default=1,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
