@@ -72,7 +72,7 @@ def run(arguments):
 
     # set bounds for Laplace optimization
     # theta unconstrained, lambda, sigma, tau must be >0
-    eps = 1e-3
+    eps = 1e-10
     param_bounds = ((-np.inf,np.inf),)*d_synth + ((eps,np.inf),)*d_synth + ((eps,np.inf),) + ((eps,np.inf),)
     #######################################
     #######################################
@@ -81,7 +81,7 @@ def run(arguments):
     #######################################
 
     print('Loading/creating dataset ' + log_suffix)
-    if arguments.dataset == 'synth_sparsereg':
+    if arguments.dataset == 'synth_sparsereg_test':
         X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
         # dataset_filename = '../data/' + arguments.dataset + '.npz'
         # np.savez(dataset_filename, X=X, y=Y)

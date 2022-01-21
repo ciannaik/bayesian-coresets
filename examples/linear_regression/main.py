@@ -97,7 +97,8 @@ def run(arguments):
       X[:, i] = np.exp( -((data[:, :2] - basis_locs[i, :])**2).sum(axis=1) / (2*basis_scales[i]**2) )
     Y = data[:, 2]
     Z = np.hstack((X, Y[:,np.newaxis]))
-
+    test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][int(arguments.data_num/100)] for i in range(Z.shape[1])]))
+    print(np.min(test_bases))
     #######################################
     #######################################
     ############ Define Model #############
@@ -179,7 +180,7 @@ def run(arguments):
     giga = bc.HilbertCoreset(Z, projector)
     sparsevi = bc.SparseVICoreset(Z, projector, n_subsample_select=1000, n_subsample_opt=1000,
                                   opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
-    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
+    newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs,augment_sample=False)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
                                     np.zeros(X.shape[1]),
@@ -272,7 +273,7 @@ parser.add_argument('--alg', type=str, default='QNC',
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=5000,
+parser.add_argument("--proj_dim", type=int, default=10000,
                     help="The number of samples taken when discretizing log likelihoods")
 parser.add_argument('--coreset_size', type=int, default=1000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
@@ -310,6 +311,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
+# arguments.func(arguments)
+run(arguments)
 

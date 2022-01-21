@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #for alg in "UNIF" "GIGA" "QNC" "IHT" "SVI"
-for alg in "IHT"
+for alg in "QNC"
 do
     for ID in 1 2 3
     do

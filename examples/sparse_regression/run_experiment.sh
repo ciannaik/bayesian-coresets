@@ -2,8 +2,8 @@
 
 for dnm in "synth_sparsereg_large"
 do
-    for alg in "UNIF" "GIGA" "IHT"
-#    for alg in "QNC"
+#    for alg in "UNIF" "GIGA" "IHT"
+    for alg in "LAP"
     do
         for ID in 1 2 3
         do

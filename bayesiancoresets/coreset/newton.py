@@ -5,13 +5,14 @@ from .coreset import Coreset
 from scipy.linalg import solve_triangular
 
 class QuasiNewtonCoreset(Coreset):
-    def __init__(self, data, projector, n_subsample_opt=None, opt_itrs=20, **kw):
+    def __init__(self, data, projector, n_subsample_opt=None, opt_itrs=20, augment_sample=False, **kw):
         self.data = data
         self.cts = []
         self.ct_idcs = []
         self.projector = projector
         self.n_subsample_opt = None if n_subsample_opt is None else min(data.shape[0], n_subsample_opt)
         self.opt_itrs = opt_itrs
+        self.augment_sample = augment_sample
         super().__init__(**kw)
 
     def reset(self):
@@ -24,6 +25,9 @@ class QuasiNewtonCoreset(Coreset):
         # self.reset()
         # uniformly subset data points
         self._select(size)
+        if self.augment_sample is True:
+            # Augment the samples with any missed points
+            self._augment()
         # optimize the weights
         self._optimize()
 
@@ -60,12 +64,37 @@ class QuasiNewtonCoreset(Coreset):
         self.idcs = np.array(self.ct_idcs)
         self.pts = self.data[self.idcs]
 
+    def _augment(self):
+        # Take a sample of coreset log-likelihoods from the current coreset posterior:
+        _, _, _, corevecs = self._get_projection(self.n_subsample_opt, self.wts, self.pts, return_sum=True)
+
+        # Define basis matrix and orthogonalise columns
+        A = corevecs.T
+        U, _ = np.linalg.qr(A)
+        rel_comp_norms = np.zeros(self.data.shape[0])
+        for i in range(self.data.shape[0]):
+            # For each datapoint in the dataset, sample the log-likelihood
+            test_vec = self.projector.project(self.data[i,:], return_sum=False)[0,:]
+            # Project onto the space spanned by the (orthogonalised) coreset log-likelihoods
+            test_vec_proj = U.dot(test_vec.dot(U))
+            rel_comp_norms[i] = np.sqrt(((test_vec - test_vec_proj)**2).sum())/np.sqrt(((test_vec)**2).sum())
+            print("Data point: {}, relative norm: {}".format(i,rel_comp_norms[i]))
+            if rel_comp_norms[i] > 0.9:
+                print("Adding data point: {} to coreset".format(i))
+                self.ct_idcs.append(i)
+                self.cts.append(1)
+
+        print("New coreset size: {}".format(np.array(self.cts).sum()))
+        # Recalculate wts, idcs, pts
+        self.wts = self.data.shape[0] * np.array(self.cts) / np.array(self.cts).sum()
+        self.idcs = np.array(self.ct_idcs)
+        self.pts = self.data[self.idcs]
+
     def _optimize(self):
 
         def grad_norm_variance(w):
             # Tune the number of samples needed to reduce the noise
             # of the stochastic Newton step below a certain threshold
-
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                          return_sum=False)

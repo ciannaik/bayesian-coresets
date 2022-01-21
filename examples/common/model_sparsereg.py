@@ -88,7 +88,7 @@ def grad_log_joint(z, prm, w, sig0, a0, b0):
     return (w[:,np.newaxis,np.newaxis]*grad_log_likelihood(z, prm)).sum(axis=0) + grad_log_prior(prm, sig0, a0, b0)
 
 def hess_log_joint(z, prm, w, sig0, a0, b0):
-    eps = 1e-3
+    eps = 1e-8
     prm = np.atleast_2d(prm)
     hess = np.zeros((prm.shape[0], prm.shape[1], prm.shape[1]))
     for i in range(prm.shape[1]):
@@ -99,6 +99,8 @@ def hess_log_joint(z, prm, w, sig0, a0, b0):
         prml[:, i] -= eps/2.
         gradl = grad_log_joint(z, prml, w, sig0, a0, b0)
         hess[:, :, i] = (gradr - gradl)/eps
+    for j in range(hess.shape[0]):
+        hess[j,:,:] -= 1.1*np.abs(np.min(np.diag(hess[j,:,:])))*np.eye(hess.shape[1],hess.shape[2])
     return hess
 
 stan_code = """
