@@ -12,7 +12,7 @@ do
 done
 
 # Run all the other algorithms
-for alg in "GIGA" "IHT"
+for alg in "UNIF" "GIGA" "IHT"
 do
     for ID in {1..10}
     do
