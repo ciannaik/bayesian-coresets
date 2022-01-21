@@ -32,7 +32,7 @@ def gauss_mmd(x, y, sigma=1):
     # do this computation in blocks to avoid heavy memory requirements
     blk = 500
 
-    print('KXX')
+    print('KXX:')
     KXX = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -41,10 +41,12 @@ def gauss_mmd(x, y, sigma=1):
             xx_diffs = x[i:(i+blk), np.newaxis, :] - x[np.newaxis, j:(j+blk), :]
             xx_sq_dists = (xx_diffs**2).sum(axis=2)
             KXX += np.exp(-xx_sq_dists/(2.*sigma**2)).sum()
+    KXX /= x.shape[0]**2
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KXX)
 
-    print('KYY')
+    print('KYY:')
     KYY = 0.
     for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
@@ -53,10 +55,13 @@ def gauss_mmd(x, y, sigma=1):
             yy_diffs = y[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             yy_sq_dists = (yy_diffs**2).sum(axis=2)
             KYY += np.exp(-yy_sq_dists/(2.*sigma**2)).sum()
+    KYY /= y.shape[0]**2
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KYY)
 
-    print('KXY')
+
+    print('KXY:')
     KXY = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -65,8 +70,10 @@ def gauss_mmd(x, y, sigma=1):
             xy_diffs = x[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             xy_sq_dists = (xy_diffs**2).sum(axis=2)
             KXY += np.exp(-xy_sq_dists/(2.*sigma**2)).sum()
+    KXY /= (x.shape[0]*y.shape[0])
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KXY)
 
     ## K(X,X)
     #xx_diffs = x[:, np.newaxis, :] - x[np.newaxis, :, :]
@@ -89,14 +96,14 @@ def gauss_mmd(x, y, sigma=1):
     #print(KXX/x.shape[0]**2 + KYY/y.shape[0]**2 - 2*KXY/(x.shape[0]*y.shape[0]))
 
     #return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/(x.shape[0]*y.shape[0])
-    return KXX/x.shape[0]**2 + KYY/y.shape[0]**2 - 2*KXY/(x.shape[0]*y.shape[0])
+    return KXX + KYY - 2*KXY
 
 def imq_mmd(x, y, sigma=1, beta=0.5):
     d = x.shape[1]
     # do this computation in blocks to avoid heavy memory requirements
     blk = 500
 
-    print('KXX')
+    print('KXX:')
     KXX = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -105,10 +112,13 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
             xx_diffs = x[i:(i+blk), np.newaxis, :] - x[np.newaxis, j:(j+blk), :]
             xx_sq_dists = (xx_diffs**2).sum(axis=2)
             KXX += (1./(xx_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
+    KXX /= x.shape[0]**2
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KXX)
 
-    print('KYY')
+
+    print('KYY:')
     KYY = 0.
     for i in range(0, y.shape[0], blk):
         sys.stdout.write(f"row index {i}/{y.shape[0]}    \r")
@@ -117,10 +127,12 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
             yy_diffs = y[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             yy_sq_dists = (yy_diffs**2).sum(axis=2)
             KYY += (1./(yy_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
+    KYY /= y.shape[0]**2
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KYY)
 
-    print('KXY')
+    print('KXY:')
     KXY = 0.
     for i in range(0, x.shape[0], blk):
         sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
@@ -129,8 +141,10 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
             xy_diffs = x[i:(i+blk), np.newaxis, :] - y[np.newaxis, j:(j+blk), :]
             xy_sq_dists = (xy_diffs**2).sum(axis=2)
             KXY += (1./(xy_sq_dists/(2.*sigma**2) + 1.)**beta).sum()
+    KXY /= (x.shape[0]*y.shape[0])
     sys.stdout.write("\n")
     sys.stdout.flush()
+    print(KXY)
 
     ## K(X,X)
     #xx_diffs = x[:, np.newaxis, :] - x[np.newaxis, :, :]
@@ -148,7 +162,7 @@ def imq_mmd(x, y, sigma=1, beta=0.5):
     #kernel_xy = 1./(xy_sq_dists/(2.*sigma**2) + 1.)**beta
 
     #return kernel_xx.sum()/x.shape[0]**2 + kernel_yy.sum()/y.shape[0]**2 - 2.*kernel_xy.sum()/(x.shape[0]*y.shape[0])
-    return KXX/x.shape[0]**2 + KYY/y.shape[0]**2 - 2*KXY/(x.shape[0]*y.shape[0])
+    return KXX + KYY - 2*KXY
 
 
 
@@ -189,13 +203,17 @@ def _stochastic_stein_blocked(x, score_estimator, _ksd, sigma, beta):
     mom2 = 0.
     while True:
         print(f'KSD estimation iteration {ct+1}')
-        scores = score_estimator(x, blk)
+        # need two iid subsamples of the data to estimate the score-score/score-data inner products
+        # note: if you just use one subsample, you're essentially computing the average KSD over subsampled posteriors (no good)
+        # if you use use two subsamples, you're getting an unbiased estimate of the full posterior KSD
+        scores_1 = score_estimator(x, blk)
+        scores_2 = score_estimator(x, blk)
         KSD = 0.
         for i in range(0, x.shape[0], blk):
             sys.stdout.write(f"row index {i}/{x.shape[0]}    \r")
             sys.stdout.flush()
             for j in range(0, x.shape[0], blk):
-                KSD += _ksd(x[i:(i+blk), :], x[j:(j+blk), :], scores[i:(i+blk),:], scores[j:(j+blk),:], sigma, beta).sum()
+                KSD += _ksd(x[i:(i+blk), :], x[j:(j+blk), :], scores_1[i:(i+blk),:], scores_2[j:(j+blk),:], sigma, beta).sum()
         sys.stdout.write("\n")
         sys.stdout.flush()
         KSD /= (x.shape[0] ** 2)
