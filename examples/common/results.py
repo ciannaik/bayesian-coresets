@@ -78,7 +78,8 @@ def save(arguments, results_folder = 'results/', log_file = 'manifest.csv', **kw
     for key, val in kwargs.items():
         if key in nsdict:
             raise ValueError(f"ERROR: key {key} (val {val}) already in namespace; cannot save this as data. Namespace: {arguments}")
-        nsdict[key] = val
+        if key != 'func':
+            nsdict[key] = val
 
     #save the df, overwriting a previous result
     df = pd.DataFrame({key:[val] for (key,val) in nsdict.items()})
