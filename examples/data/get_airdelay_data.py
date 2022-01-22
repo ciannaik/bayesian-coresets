@@ -112,6 +112,11 @@ print('Filtering data to origin airport {airport_codes}')
 df_airline = df_airline[df_airline.ORIGIN.isin(airport_codes)]
 print('Resetting index')
 df_airline.reset_index(inplace=True, drop=True)
+print('Removing unnamed cols from original data export')
+for coln in df_airline.columns:
+    if 'Unnamed' in coln and df_airline[coln].isnull().all():
+        print(f"Detected empty unnamed column {coln}")
+        df_airline.drop(coln, axis=1, inplace=True)
 
 print('Collecting unique dates')
 df_dates = df_airline[['YEAR', 'MONTH', 'DAY_OF_MONTH']].drop_duplicates().reset_index(drop=True)
@@ -242,34 +247,55 @@ for i in range(df_weather.shape[0]):
     cd = df_weather.loc[i, 'airport']
     date_map[(cd, yr, mn, dy)] = i
 
-print('Augmenting airline data with weather data')
 # now we have df_airline with flight delay info, and df_weather with weather
 # want to augment with the relevant airport weather conditions for each day
 # first add dummy columns
-newcols = ['temp_high_F', 'temp_low_F', 'temp_avg_F',
-           'hist_avg_temp_high_F', 'hist_avg_temp_low_F', 'hist_avg_temp_avg_F',
-           'precip_in', 'hist_avg_precip_in', 'dew_high_F', 'dew_low_F', 'dew_avg_F',
-           'max_wind_spd_mph', 'visibility', 'pressure_hg']
-df_airline[newcols] = 1.
-# now fill these with correct values
-ordered_weather_info = np.zeros((df_airline.shape[0], len(newcols)))
-for i in range(df_airline.shape[0]):
-    sys.stdout.write(f"Row {i+1}/{df_airline.shape[0]}          \r")
-    sys.stdout.flush()
-    yr = df_airline.iloc[i].YEAR
-    mnth = df_airline.iloc[i].MONTH
-    day = df_airline.iloc[i].DAY_OF_MONTH
-    wcode = 'K'+df_airline.iloc[i].ORIGIN
-    df_row = df_weather.loc[date_map[(wcode, yr, mnth, day)]]
-    ordered_weather_info[i, :] = df_row.loc[newcols].to_numpy()
-    #assert df_row.shape[0] == 1, "Found multiple matches..."
-    #df_airline.loc[i, newcols] = df_row.loc[newcols]
-df_airline[newcols] = ordered_weather_info
-print(df_airline[newcols])
-print('')
-print('Done parsing data; saving')
-df_airline.to_csv("airport_delays.csv", index=False)
-#np.savez('data/airportdelays.npz', X=X, y=y, Xt=Xt, yt=yt)
+if not os.path.exists('airport_delays.csv'):
+    print('Augmenting airline data with weather data')
+    newcols = ['temp_high_F', 'temp_low_F', 'temp_avg_F',
+               'hist_avg_temp_high_F', 'hist_avg_temp_low_F', 'hist_avg_temp_avg_F',
+               'precip_in', 'hist_avg_precip_in', 'dew_high_F', 'dew_low_F', 'dew_avg_F',
+               'max_wind_spd_mph', 'visibility', 'pressure_hg']
+    df_airline[newcols] = 1.
+
+    # now fill these with correct values
+    ordered_weather_info = np.zeros((df_airline.shape[0], len(newcols)))
+    for i in range(df_airline.shape[0]):
+        sys.stdout.write(f"Row {i+1}/{df_airline.shape[0]}          \r")
+        sys.stdout.flush()
+        yr = df_airline.iloc[i].YEAR
+        mnth = df_airline.iloc[i].MONTH
+        day = df_airline.iloc[i].DAY_OF_MONTH
+        wcode = 'K'+df_airline.iloc[i].ORIGIN
+        df_row = df_weather.loc[date_map[(wcode, yr, mnth, day)]]
+        ordered_weather_info[i, :] = df_row.loc[newcols].to_numpy()
+        #assert df_row.shape[0] == 1, "Found multiple matches..."
+        #df_airline.loc[i, newcols] = df_row.loc[newcols]
+    df_airline[newcols] = ordered_weather_info
+    print(df_airline[newcols])
+    print('')
+    print('Done parsing data; saving')
+    df_airline.to_csv("airport_delays.csv", index=False)
+
+print('Airport delays data file airport_delays.csv found; loading')
+df_delays = pd.read_csv("airport_delays.csv")
+
+print('Converting to numpy array')
+print(df_delays.columns)
+
+delays_numpy = df_delays[['DAY_OF_WEEK', 'CRS_DEP_TIME', 'DEP_TIME', 'CRS_ARR_TIME', 'ARR_TIME',
+        'CANCELLED', 'DIVERTED', 'DISTANCE',
+        'temp_high_F', 'temp_low_F', 'temp_avg_F', 'hist_avg_temp_high_F', 'hist_avg_temp_low_F','hist_avg_temp_avg_F','precip_in','hist_avg_precip_in','dew_high_F','dew_low_F','dew_avg_F','max_wind_spd_mph','visibility','pressure_hg']].to_numpy()
+
+if np.isnan(delays_numpy).any():
+    print('Error: detected missing data in delays numpy')
+
+data_size = 10000
+idcs = np.arange(delays_numpy.shape[0])
+np.random.shuffle(idcs)
+delays_sub = delays_numpy[idcs[:10000], :]
+np.save('delays.npy', delays_sub)
+
 
 
 
