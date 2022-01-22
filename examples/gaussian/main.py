@@ -146,7 +146,6 @@ def run(arguments):
             'FULL' : None}
     alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
 
-
     if arguments.alg == 'FULL':
         # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
         t_build = 0.
@@ -198,16 +197,20 @@ def run(arguments):
     # get full/approx posterior mean/covariance
     mu_approx = approx_samples.mean(axis=0)
     Sig_approx = np.cov(approx_samples, rowvar=False)
+    logsig_approx = np.log(np.diag(Sig_approx))
     LSig_approx = np.linalg.cholesky(Sig_approx)
     LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True, check_finite=False)
     mu_full = full_samples.mean(axis=0)
     Sig_full = np.cov(full_samples, rowvar=False)
+    logsig_full = np.log(np.diag(Sig_full))
     LSig_full = np.linalg.cholesky(Sig_full)
     LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True, check_finite=False)
     # compute the relative 2 norm error for mean and variance cholesky factor
-    mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-    Sig_diag_err = np.sqrt(((np.sqrt(np.diag(Sig_approx)) - np.sqrt(np.diag(Sig_full)))**2).sum())/np.sqrt(((np.sqrt(np.diag(Sig_full)))**2).sum())
-    Sig_err = np.linalg.norm(LSig_full - LSig_approx, ord=2)/np.linalg.norm(LSig_full, ord=2) 
+    mu_err = np.linalg.norm(mu_full - mu_approx)/np.linalg.norm(mu_full)
+    logsig_diag_err = np.linalg.norm(logsig_full-logsig_approx)/np.linalg.norm(logsig_full)
+    cwise_mu_err = np.mean(np.fabs((mu_full - mu_approx)/mu_full))
+    cwise_logsig_diag_err = np.mean(np.fabs((logsig_full - logsig_approx)/logsig_full))
+    Sig_err = np.linalg.norm(LSig_full - LSig_approx, ord=2)/np.linalg.norm(LSig_full, ord=2)
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
@@ -233,7 +236,10 @@ def run(arguments):
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_diag_err=Sig_diag_err, Sig_err=Sig_err)
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
+                 logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
+                 Sig_err=Sig_err
+                )
                 #, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd) #,
                 #gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')

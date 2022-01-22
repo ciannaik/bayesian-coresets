@@ -1,8 +1,10 @@
 #!/bin/bash
 
 python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size mu_err --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Relative Mean Error"
+python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size cwise_mu_err --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Component-wise Relative Mean Error"
+python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size logsig_diag_err --plot_toolbar  --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Relative Log-Variance Error"
+python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size cwise_logsig_diag_err --plot_toolbar  --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Component-wise Relative Log-Variance Error"
 python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size Sig_err --plot_toolbar  --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Relative Cov Cholesky Error"
-python3 main.py --samples_inference 10000 --dataset synth_gauss plot coreset_size Sig_diag_err --plot_toolbar  --groupby coreset_size --plot_type line --plot_legend alg --plot_y_type linear --plot_x_label "Coreset Size" --plot_y_label "Relative Diag Std Error"
 #python3 main.py --samples_inference 1000 --dataset synth_gauss plot coreset_size imq_stein --plot_toolbar  --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "IMQ Stein Discr."
 #python3 main.py --samples_inference 1000 --dataset synth_gauss plot coreset_size gauss_stein --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Gauss Stein Discr."
 #python3 main.py --samples_inference 1000 --dataset synth_gauss plot coreset_size imq_mmd --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "IMQ MMD Discr."
