@@ -233,6 +233,14 @@ if not os.path.exists('historic_weather.csv'):
 print('Historic weather data file exists, loading')
 df_weather = pd.read_csv("historic_weather.csv")
 
+print('Constructing lookup table of rows')
+date_map = {}
+for i in range(df_weather.shape[0]):
+    yr = df_weather.loc[i, 'year']
+    mn = df_weather.loc[i, 'month']
+    dy = df_weather.loc[i, 'day']
+    cd = df_weather.loc[i, 'airport']
+    date_map[(cd, yr, mn, dy)] = i
 
 print('Augmenting airline data with weather data')
 # now we have df_airline with flight delay info, and df_weather with weather
@@ -244,18 +252,23 @@ newcols = ['temp_high_F', 'temp_low_F', 'temp_avg_F',
            'max_wind_spd_mph', 'visibility', 'pressure_hg']
 df_airline[newcols] = 1.
 # now fill these with correct values
+ordered_weather_info = np.zeros((df_airline.shape[0], len(newcols)))
 for i in range(df_airline.shape[0]):
+    sys.stdout.write(f"Row {i+1}/{df_airline.shape[0]}          \r")
+    sys.stdout.flush()
     yr = df_airline.iloc[i].YEAR
     mnth = df_airline.iloc[i].MONTH
     day = df_airline.iloc[i].DAY_OF_MONTH
     wcode = 'K'+df_airline.iloc[i].ORIGIN
-    df_row = df_weather[(df_weather.year == yr) & (df_weather.month == mnth) & (df_weather.day == day) & (df_weather.airport == wcode)].reset_index()
-    assert df_row.shape[0] == 1, "Found multiple matches..."
-    df_airline.loc[i, newcols] = df_row.loc[0, newcols]
-
+    df_row = df_weather.loc[date_map[(wcode, yr, mnth, day)]]
+    ordered_weather_info[i, :] = df_row.loc[newcols].to_numpy()
+    #assert df_row.shape[0] == 1, "Found multiple matches..."
+    #df_airline.loc[i, newcols] = df_row.loc[newcols]
+df_airline[newcols] = ordered_weather_info
+print(df_airline[newcols])
+print('')
 print('Done parsing data; saving')
 df_airline.to_csv("airport_delays.csv", index=False)
-
 #np.savez('data/airportdelays.npz', X=X, y=y, Xt=Xt, yt=yt)
 
 
