@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import os
+import sys
 import datetime as dt
 import zipfile
 import shutil
@@ -102,17 +103,19 @@ if not os.path.exists('airline_data.csv'):
 else:
     print("airline_data.csv exists, loading")
 
-df = pd.read_csv('airline_data.csv')
+df_airline = pd.read_csv('airline_data.csv')
 
 airport_codes = ['ATL', 'LAX', 'ORD', 'DFW', 'JFK', 'SFO', 'SEA']
 weather_codes = ['K'+code for code in airport_codes]
 
 print('Filtering data to origin airport {airport_codes}')
-df = df[df.ORIGIN.isin(airport_codes)]
+df_airline = df_airline[df_airline.ORIGIN.isin(airport_codes)]
+print('Resetting index')
+df_airline.reset_index(inplace=True, drop=True)
 
 print('Collecting unique dates')
-df_weather = df[['YEAR', 'MONTH', 'DAY_OF_MONTH']].drop_duplicates().reset_index(drop=True)
-print(f'Found {df_weather.shape[0]} unique dates')
+df_dates = df_airline[['YEAR', 'MONTH', 'DAY_OF_MONTH']].drop_duplicates().reset_index(drop=True)
+print(f'Found {df_dates.shape[0]} unique dates')
 
 print('Collecting weather information for each date & airport')
 features = ['Mean Temperature', 'Max Temperature', 'Min Temperature', 'Dew Point', 'Average Humidity', 'Maximum Humidity', 'Minimum Humidity', 'Precipitation', 'Snow', 'Snow Depth', 'Sea Level Pressure', 'Wind Speed', 'Max Wind Speed', 'Visibility']
@@ -120,8 +123,8 @@ features = [f.lower().replace(' ', '') for f in features]
 if not os.path.isdir('weather_data'):
     os.mkdir('weather_data')
 for wcode in weather_codes:
-    for i in range(df_weather.shape[0]):
-        date_string = f"{df_weather.iloc[i].YEAR}-{df_weather.iloc[i].MONTH}-{df_weather.iloc[i].DAY_OF_MONTH}"
+    for i in range(df_dates.shape[0]):
+        date_string = f"{df_dates.iloc[i].YEAR}-{df_dates.iloc[i].MONTH}-{df_dates.iloc[i].DAY_OF_MONTH}"
         html_path = 'weather_data/'+wcode+'-'+date_string+'.html'
         print(f"Checking if weather data {html_path} exists")
         # get the html file
@@ -142,66 +145,118 @@ for wcode in weather_codes:
             with open(html_path, 'w') as f:
                 f.write(html)
             driver.quit()
+            print("Done downloading, sleeping for 30s to be nice to the webserver (any quicker than that causes throttling)")
             time.sleep(30)
-        # read the csv
-        df = pd.read_html(html_path)
-quit()
 
-apt_weather_data = np.empty((apt_day_data.shape[0], len(features)))
-#set defaults for values if missing
-apt_weather_data[:] = np.nan
-apt_weather_data[:, 8] = 0.
-apt_weather_data[:, 9] = 0.
-apt_weather_data[:, 11] = 0.
-for i in range(apt_day_data.shape[0]):
-  year = str(apt_day_data[i, 0])
-  month = str(apt_day_data[i, 1])
-  day = str(apt_day_data[i, 2])
-  print('On ' + year+'/'+month+'/'+day)
-  table = np.array(pd.read_html(req_prefix+'/'+weather_code+'/'+year+'/'+month+'/'+day+'/DailyHistory.html')[0])[:, :2]
-  names = []
-  vals = []
-  for j in range(table.shape[0]):
-    names.append(str(table[j, 0].encode('utf-8').decode('ascii', 'ignore')))
-    try:
-      vals.append(float(non_decimal.sub('', table[j,1].encode('utf-8').decode('ascii', 'ignore'))))
-    except:
-      vals.append(np.nan)
-  vals = np.array(vals)
-  names = [nm for j, nm in enumerate(names) if not np.isnan(vals[j])]
-  names = [nm.lower().replace(' ', '') for nm in names]
-  vals = vals[np.isnan(vals) == 0]
-  for j, nm in enumerate(names):
-    try:
-      apt_weather_data[i, features.index(nm)] = vals[j]
-    except:
-      pass
-year_weather_data.append(apt_weather_data)
-year_day_data.append(apt_day_data)
+print('Constructing dataframe of historic weather data')
+if not os.path.exists('historic_weather.csv'):
+    print("The historic weather csv doesn't exist; building")
+    df_weather = pd.DataFrame({ 'airport':[],
+                            'year':[],
+                            'month':[],
+                            'day':[],
+                            'temp_high_F':[],
+                            'temp_low_F':[],
+                            'temp_avg_F':[],
+                            'hist_avg_temp_high_F':[],
+                            'hist_avg_temp_low_F':[],
+                            'hist_avg_temp_avg_F':[],
+                            'precip_in':[],
+                            'hist_avg_precip_in':[],
+                            'dew_high_F':[],
+                            'dew_low_F':[],
+                            'dew_avg_F':[],
+                            'max_wind_spd_mph':[],
+                            'visibility':[],
+                            'pressure_hg':[]})
 
-print('done retrieving and parsing, saving output')
-weather_data = np.vstack(year_weather_data)
-day_data = np.vstack(year_day_data)
-X = np.zeros((weather_data.shape[0], weather_data.shape[1]+2))
-X[:, :weather_data.shape[1]] = weather_data
-for i in range(weather_data.shape[0]):
-  X[i, weather_data.shape[1]] = (dt.date(day_data[i, 0], day_data[i, 1], day_data[i, 2]) - dt.date(1987, 1, 1)).total_seconds()/(60.*60.*24.*365.)
-X[:, weather_data.shape[1]] = X[:, weather_data.shape[1]] - X[:, weather_data.shape[1]].min()
-X[:, -1] = 1.
-y = day_data[:, -1]
-inds = np.logical_not(np.any(np.isnan(X), axis=1))
-X = X[inds, :]
-y = y[inds]
+    for wcode in weather_codes:
+        print('')
+        print(f"Processing airport {wcode}")
+        for i in range(df_dates.shape[0]):
+            date_string = f"{df_dates.iloc[i].YEAR}-{df_dates.iloc[i].MONTH}-{df_dates.iloc[i].DAY_OF_MONTH}"
+            html_path = 'weather_data/'+wcode+'-'+date_string+'.html'
+            sys.stdout.write(f"Row {i+1}/{df_dates.shape[0]}          \r")
+            sys.stdout.flush()
 
-inds = np.arange(X.shape[0])
-np.random.shuffle(inds)
-n_train = 9*X.shape[0]/10
-Xt = X[inds[n_train:], :]
-yt = y[inds[n_train:]]
-X = X[inds[:n_train], :]
-y = y[inds[:n_train]]
+            # read the html file
+            df = pd.read_html(html_path)[0]
+            # make sure it is in the expected coln format
+            if (len(df.columns) != 5) or ('Temperature' not in df.columns[0][0]) or ('Actual' not in df.columns[1][0]) or ('Historic' not in df.columns[2][0]):
+                assert False, f"dataframe column headers unexpected. \nncols {len(df.columns)} df:\n{df}"
+            # remove unused columns
+            df.columns = ['name', 'val', 'hist', 'unused', 'unused']
+            df = df[['name', 'val', 'hist']]
+            # remove unused rows
+            df = df[:11]
 
-np.savez('data/airportdelays.npz', X=X, y=y, Xt=Xt, yt=yt)
+            # make sure rows are in expected format
+            if ("High Temp" not in df['name'][0]) or \
+               ("Low Temp" not in df['name'][1]) or \
+               ("Average Temp" not in df['name'][2]) or \
+               ("Precipitation" not in df['name'][3]) or \
+               ("Dew Point" not in df['name'][4]) or \
+               ("High" not in df['name'][5]) or \
+               ("Low" not in df['name'][6]) or \
+               ("Average" not in df['name'][7]) or \
+               ("Max Wind" not in df['name'][8]) or \
+               ("Visibil" not in df['name'][9]) or \
+               ("Sea Level" not in df['name'][10]):
+                assert False, f"dataframe row names unexpected. \ndf:\n{df}"
+
+            # gather row of data for the big dataframe
+            row = {'airport':wcode,
+                    'year':df_dates.iloc[i].YEAR,
+                    'month':df_dates.iloc[i].MONTH,
+                    'day':df_dates.iloc[i].DAY_OF_MONTH,
+                    'temp_high_F':df['val'][0],
+                    'temp_low_F':df['val'][1],
+                    'temp_avg_F':df['val'][2],
+                    'hist_avg_temp_high_F':df['hist'][0],
+                    'hist_avg_temp_low_F':df['hist'][1],
+                    'hist_avg_temp_avg_F':df['hist'][2],
+                    'precip_in':df['val'][3],
+                    'hist_avg_precip_in':df['hist'][3],
+                    'dew_high_F':df['val'][5],
+                    'dew_low_F':df['val'][6],
+                    'dew_avg_F':df['val'][7],
+                    'max_wind_spd_mph':df['val'][8],
+                    'visibility':df['val'][9],
+                    'pressure_hg':df['val'][10]}
+            df_weather = df_weather.append(row, ignore_index=True)
+    df_weather['year'] = df_weather['year'].astype(int)
+    df_weather['month'] = df_weather['month'].astype(int)
+    df_weather['day'] = df_weather['day'].astype(int)
+    print("Saving historic weather dataframe")
+    df_weather.to_csv("historic_weather.csv", index=False)
+
+print('Historic weather data file exists, loading')
+df_weather = pd.read_csv("historic_weather.csv")
+
+
+print('Augmenting airline data with weather data')
+# now we have df_airline with flight delay info, and df_weather with weather
+# want to augment with the relevant airport weather conditions for each day
+# first add dummy columns
+newcols = ['temp_high_F', 'temp_low_F', 'temp_avg_F',
+           'hist_avg_temp_high_F', 'hist_avg_temp_low_F', 'hist_avg_temp_avg_F',
+           'precip_in', 'hist_avg_precip_in', 'dew_high_F', 'dew_low_F', 'dew_avg_F',
+           'max_wind_spd_mph', 'visibility', 'pressure_hg']
+df_airline[newcols] = 1.
+# now fill these with correct values
+for i in range(df_airline.shape[0]):
+    yr = df_airline.iloc[i].YEAR
+    mnth = df_airline.iloc[i].MONTH
+    day = df_airline.iloc[i].DAY_OF_MONTH
+    wcode = 'K'+df_airline.iloc[i].ORIGIN
+    df_row = df_weather[(df_weather.year == yr) & (df_weather.month == mnth) & (df_weather.day == day) & (df_weather.airport == wcode)].reset_index()
+    assert df_row.shape[0] == 1, "Found multiple matches..."
+    df_airline.loc[i, newcols] = df_row.loc[0, newcols]
+
+print('Done parsing data; saving')
+df_airline.to_csv("airport_delays.csv", index=False)
+
+#np.savez('data/airportdelays.npz', X=X, y=y, Xt=Xt, yt=yt)
 
 
 
