@@ -317,10 +317,6 @@ if not os.path.exists('airport_delays.csv'):
 print('Airport delays data file airport_delays.csv found; loading')
 df_delays = pd.read_csv("airport_delays.csv")
 
-print(df_delays[:10])
-quit()
-
-
 print('Converting to numpy array')
 print(df_delays.columns)
 
@@ -328,49 +324,8 @@ delays_numpy = df_delays[['DAY_OF_WEEK', 'CRS_DEP_TIME', 'DEP_TIME', 'CRS_ARR_TI
         'CANCELLED', 'DIVERTED', 'DISTANCE',
         'temp_high_F', 'temp_low_F', 'temp_avg_F', 'hist_avg_temp_high_F', 'hist_avg_temp_low_F','hist_avg_temp_avg_F','precip_in','hist_avg_precip_in','dew_high_F','dew_low_F','dew_avg_F','max_wind_spd_mph','visibility','pressure_hg']].to_numpy()
 
-if np.isnan(delays_numpy).any():
-    print('Error: detected missing data in delays numpy')
-
 data_size = 10000
 idcs = np.arange(delays_numpy.shape[0])
 np.random.shuffle(idcs)
 delays_sub = delays_numpy[idcs[:10000], :]
 np.save('delays.npy', delays_sub)
-
-
-
-# convert float cols to ints (everything is whole numbers)
-intcols = [
-       'DEP_DELAY', 'TAXI_OUT',
-       'TAXI_IN', 'ARR_DELAY',
-       'CANCELLED', 'DIVERTED', 'CRS_ELAPSED_TIME', 'ACTUAL_ELAPSED_TIME',
-       'AIR_TIME', 'DISTANCE', 'CARRIER_DELAY', 'WEATHER_DELAY', 'NAS_DELAY',
-       'SECURITY_DELAY', 'LATE_AIRCRAFT_DELAY']
-for coln in intcols:
-    print('converting coln ' + coln)
-    df_airline[coln] = df_airline[coln].astype(int)
-
-
-
-
-print(df_airline)
-quit()
-
-
-# TODO preserve cancelled flights (
-# remove diverted and cancelled flights
-df_airline = df_airline[df_airline.DIVERTED == 0]
-
-print(df_airline[df_airline.DEP_DELAY.isnull()].shape)
-print(df_airline.shape)
-pd.set_option("display.max_rows", None, "display.max_columns", None)
-print(df_airline[df_airline.DEP_DELAY.isnull()][:10])
-quit()
-
-
-
-# convert nans to 0s in the delay type columns
-delaycols = ['CARRIER_DELAY', 'WEATHER_DELAY', 'NAS_DELAY', 'SECURITY_DELAY', 'LATE_AIRCRAFT_DELAY']
-for coln in delaycols:
-    df_airline[coln] = df_airline[coln].fillna(0)
-
