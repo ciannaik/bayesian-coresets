@@ -103,7 +103,49 @@ if not os.path.exists('airline_data.csv'):
 else:
     print("airline_data.csv exists, loading")
 
-df_airline = pd.read_csv('airline_data.csv')
+
+# force certain columns (times of day, in 24h miltime format) to be read as strings
+dtypes_dict = {
+                'CRS_DEP_TIME':str,
+                'DEP_TIME':str,
+                'WHEELS_OFF':str,
+                'WHEELS_ON':str,
+                'CRS_ARR_TIME':str,
+                'ARR_TIME':str,
+            }
+df_airline = pd.read_csv('airline_data.csv', dtype=dtypes_dict)
+
+# remove unnamed columns
+print('Removing unnamed columns')
+for coln in df_airline.columns:
+    if 'Unnamed' in coln and df_airline[coln].isnull().all():
+        print(f"Detected empty unnamed column {coln}, removing")
+        df_airline.drop(coln, axis=1, inplace=True)
+
+# convert miltime strings to minutes since start of day
+print('Converting string time columns to minutes since day start')
+def convert_miltime_mins(t):
+    if isinstance(t, str):
+        if len(t) == 0:
+            return np.nan
+        elif len(t) != 4:
+            raise ValueError(f"Time not length 4: {t}")
+        return int(t[:2])*60. + int(t[2:])
+    else:
+        if not np.isnan(t):
+            raise ValueError(f"t is not string and not nan: {t}")
+        return t
+strcols = [
+          'CRS_DEP_TIME',
+          'DEP_TIME',
+          'WHEELS_OFF',
+          'WHEELS_ON',
+          'CRS_ARR_TIME',
+          'ARR_TIME'
+        ]
+for coln in strcols:
+    print('Converting ' + coln)
+    df_airline[coln] = df_airline[coln].apply(convert_miltime_mins)
 
 airport_codes = ['ATL', 'LAX', 'ORD', 'DFW', 'JFK', 'SFO', 'SEA']
 weather_codes = ['K'+code for code in airport_codes]
@@ -112,11 +154,6 @@ print('Filtering data to origin airport {airport_codes}')
 df_airline = df_airline[df_airline.ORIGIN.isin(airport_codes)]
 print('Resetting index')
 df_airline.reset_index(inplace=True, drop=True)
-print('Removing unnamed cols from original data export')
-for coln in df_airline.columns:
-    if 'Unnamed' in coln and df_airline[coln].isnull().all():
-        print(f"Detected empty unnamed column {coln}")
-        df_airline.drop(coln, axis=1, inplace=True)
 
 print('Collecting unique dates')
 df_dates = df_airline[['YEAR', 'MONTH', 'DAY_OF_MONTH']].drop_duplicates().reset_index(drop=True)
@@ -287,16 +324,8 @@ delays_numpy = df_delays[['DAY_OF_WEEK', 'CRS_DEP_TIME', 'DEP_TIME', 'CRS_ARR_TI
         'CANCELLED', 'DIVERTED', 'DISTANCE',
         'temp_high_F', 'temp_low_F', 'temp_avg_F', 'hist_avg_temp_high_F', 'hist_avg_temp_low_F','hist_avg_temp_avg_F','precip_in','hist_avg_precip_in','dew_high_F','dew_low_F','dew_avg_F','max_wind_spd_mph','visibility','pressure_hg']].to_numpy()
 
-if np.isnan(delays_numpy).any():
-    print('Error: detected missing data in delays numpy')
-
 data_size = 10000
 idcs = np.arange(delays_numpy.shape[0])
 np.random.shuffle(idcs)
 delays_sub = delays_numpy[idcs[:10000], :]
 np.save('delays.npy', delays_sub)
-
-
-
-
-
