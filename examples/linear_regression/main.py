@@ -97,8 +97,9 @@ def run(arguments):
       X[:, i] = np.exp( -((data[:, :2] - basis_locs[i, :])**2).sum(axis=1) / (2*basis_scales[i]**2) )
     Y = data[:, 2]
     Z = np.hstack((X, Y[:,np.newaxis]))
-    test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][int(arguments.data_num/100)] for i in range(Z.shape[1])]))
-    print(np.min(test_bases))
+    # test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][int(arguments.data_num/100)] for i in range(Z.shape[1])]))
+    test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][20] for i in range(Z.shape[1])]))
+    print(test_bases[0]/test_bases[1])
     #######################################
     #######################################
     ############ Define Model #############
@@ -213,6 +214,8 @@ def run(arguments):
     else:
         approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
 
+    # approx_samples, _, _ = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
@@ -233,18 +236,11 @@ def run(arguments):
     # # compute mmd discrepancies
     # gauss_mmd = stein.gauss_mmd(approx_samples, full_samples)
     # imq_mmd = stein.imq_mmd(approx_samples, full_samples)
-    # # # compute stein discrepancies
-    # # scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig, mu0, sig0)
-    # # gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
-    # # imq_stein = stein.imq_stein(approx_samples, scores_approx)
+    # # compute stein discrepancies
+    # scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig, mu0, sig0)
+    # gauss_stein = stein.gauss_stein(approx_samples, scores_approx)
+    # imq_stein = stein.imq_stein(approx_samples, scores_approx)
 
-
-    # print('Saving ' + log_suffix)
-    # # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
-    # #              rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-    # #              gauss_stein=gauss_stein, imq_stein=imq_stein)
-    # print('')
-    # print('')
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
@@ -252,6 +248,12 @@ def run(arguments):
     print('')
     print('')
 
+    # print('Saving ' + log_suffix)
+    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
+    #              rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+    #              gauss_stein=gauss_stein, imq_stein=imq_stein)
+    # print('')
+    # print('')
 
 ############################
 ############################
@@ -268,22 +270,22 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--data_num', type=int, default='10000', help='Dataset subsample to use')
 parser.add_argument('--n_bases_per_scale', type=int, default=50, help="The number of Radial Basis Functions per scale")#TODO: verify help message
-parser.add_argument('--alg', type=str, default='QNC',
+parser.add_argument('--alg', type=str, default='LAP',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=10000,
+parser.add_argument("--proj_dim", type=int, default=5000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=1000, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=5000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
-parser.add_argument('--newton_opt_itrs', type=str, default=10,
+parser.add_argument('--newton_opt_itrs', type=str, default=20,
                     help="Number of optimization iterations (for QNC)")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=15,
+parser.add_argument('--trial', type=int, default=16,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
@@ -311,6 +313,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 

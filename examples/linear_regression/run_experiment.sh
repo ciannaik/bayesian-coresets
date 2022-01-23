@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#for alg in "UNIF" "GIGA" "QNC" "IHT" "SVI"
-for alg in "QNC"
+for alg in "LAP" "UNIF" "GIGA" "IHT" "QNC"
+#for alg in "QNC"
 do
-    for ID in 1 2 3
+    for ID in 16
     do
     	for M in 500 1000 2000
     	do

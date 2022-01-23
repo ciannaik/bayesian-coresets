@@ -234,7 +234,7 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="synth_lr_cauchy_large",
+parser.add_argument('--dataset', type=str, default="criteo",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
@@ -279,6 +279,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
+# arguments.func(arguments)
+run(arguments)
 

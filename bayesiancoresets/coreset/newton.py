@@ -126,10 +126,10 @@ class QuasiNewtonCoreset(Coreset):
 
         def grd(w):
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
-            # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, x, self.pts,
+            # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                    return_sum=False)
             resid = sum_scaling*vecs_sum - w.dot(corevecs)
-            # resid = sum_scaling * vecs.sum(axis=0) - x.dot(corevecs)
+            # resid = sum_scaling * vecs.sum(axis=0) - w.dot(corevecs)
             grd = (corevecs.dot(resid) / corevecs.shape[1])
             return -grd
 

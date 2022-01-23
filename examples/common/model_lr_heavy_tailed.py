@@ -4,10 +4,10 @@ def load_data(dnm):
   data = np.load(dnm)
   X = data['X']
   Y = data['y']
-  #standardize the covariates; last col is intercept, so no stdization there
-  m = X[:, :-1].mean(axis=0)
-  V = np.cov(X[:, :-1], rowvar=False)+1e-12*np.eye(X.shape[1]-1)
-  X[:, :-1] = np.linalg.solve(np.linalg.cholesky(V), (X[:, :-1] - m).T).T
+  # #standardize the covariates; last col is intercept, so no stdization there
+  # m = X[:, :-1].mean(axis=0)
+  # V = np.cov(X[:, :-1], rowvar=False)+1e-12*np.eye(X.shape[1]-1)
+  # X[:, :-1] = np.linalg.solve(np.linalg.cholesky(V), (X[:, :-1] - m).T).T
   Z = data['y'][:, np.newaxis]*X
   data.close()
   return X, Y, Z, None
