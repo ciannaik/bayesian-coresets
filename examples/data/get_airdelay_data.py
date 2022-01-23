@@ -147,6 +147,18 @@ for coln in strcols:
     print('Converting ' + coln)
     df_airline[coln] = df_airline[coln].apply(convert_miltime_mins)
 
+print('Changing dep_delay and arr_delay to 0 instead of nan if the flight was on time')
+df_airline[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_DEP_TIME == df_airline.DEP_TIME)]['DEP_DELAY'] = 0.
+df_airline[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_ARR_TIME == df_airline.ARR_TIME)]['ARR_DELAY'] = 0.
+print('Checking that any nans in dep/arr delay correspond to cancelled/missing flights')
+if not ((df_airline[df_airline.DEP_DELAY.isnull()].CANCELLED == 1.) | (df_airline[df_airline.DEP_DELAY.isnull()].DIVERTED == 1.)).all():
+    print("Error: found dep_delay null but flight wasnt cancelled or diverted")
+    print(df_airline[df_airline.DEP_DELAY.isnull() & (df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.)])
+print('Changing delay types to 0 for missing entries')
+del_colns = ['CARRIER_DELAY', 'WEATHER_DELAY', 'NAS_DELAY', 'SECURITY_DELAY', 'LATE_AIRCRAFT_DELAY']
+for coln in del_colns:
+    df_airline[coln].fillna(0.)
+
 airport_codes = ['ATL', 'LAX', 'ORD', 'DFW', 'JFK', 'SFO', 'SEA']
 weather_codes = ['K'+code for code in airport_codes]
 
