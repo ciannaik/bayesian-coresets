@@ -246,6 +246,9 @@ if not os.path.exists('historic_weather.csv'):
                ("Sea Level" not in df['name'][10]):
                 assert False, f"dataframe row names unexpected. \ndf:\n{df}"
 
+            def cln(v):
+                return float(v) if v != '--' else np.nan
+
             # gather row of data for the big dataframe
             row = {'airport':wcode,
                     'year':df_dates.iloc[i].YEAR,
@@ -258,7 +261,7 @@ if not os.path.exists('historic_weather.csv'):
                     'hist_avg_temp_low_F':df['hist'][1],
                     'hist_avg_temp_avg_F':df['hist'][2],
                     'precip_in':df['val'][3],
-                    'hist_avg_precip_in':df['hist'][3],
+                    'hist_avg_precip_in': cln(df['hist'][3]),
                     'dew_high_F':df['val'][5],
                     'dew_low_F':df['val'][6],
                     'dew_avg_F':df['val'][7],
@@ -320,7 +323,7 @@ df_delays = pd.read_csv("airport_delays.csv")
 print('Converting to numpy array')
 print(df_delays.columns)
 
-delays_numpy = df_delays[['DAY_OF_WEEK', 'CRS_DEP_TIME', 'DEP_TIME', 'CRS_ARR_TIME', 'ARR_TIME',
+delays_numpy = df_delays[['DAY_OF_WEEK', 'CRS_DEP_TIME', 'DEP_TIME', 'DEP_DELAY', 'CRS_ARR_TIME', 'ARR_TIME', 'ARR_DELAY',
         'CANCELLED', 'DIVERTED', 'DISTANCE',
         'temp_high_F', 'temp_low_F', 'temp_avg_F', 'hist_avg_temp_high_F', 'hist_avg_temp_low_F','hist_avg_temp_avg_F','precip_in','hist_avg_precip_in','dew_high_F','dew_low_F','dew_avg_F','max_wind_spd_mph','visibility','pressure_hg']].to_numpy()
 
