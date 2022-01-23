@@ -8,10 +8,12 @@
 #done
 
 #for dnm in "synth_lr" "phishing" "ds1"
-for dnm in "synth_lr_cauchy_large"
+for dnm in "criteo"
 do
     python3 main.py --model lr --dataset $dnm plot coreset_size mu_err --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Mean Error"
     python3 main.py --model lr --dataset $dnm plot coreset_size Sig_err --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Cov Error"
+    python3 main.py --model lr --dataset $dnm plot coreset_size mu_err_full --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Full Mean Error"
+    python3 main.py --model lr --dataset $dnm plot coreset_size Sig_err_full --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Full Cov Error"
     python3 main.py --model lr --dataset $dnm plot coreset_size imq_stein --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "IMQ Stein Discr."
     python3 main.py --model lr --dataset $dnm plot coreset_size gauss_stein --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Gauss Stein Discr."
     python3 main.py --model lr --dataset $dnm plot coreset_size imq_mmd --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "IMQ MMD Discr."

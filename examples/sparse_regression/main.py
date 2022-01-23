@@ -70,10 +70,7 @@ def run(arguments):
     d_active = 4
     sig = 1.
 
-    # set bounds for Laplace optimization
-    # theta unconstrained, lambda, sigma, tau must be >0
-    eps = 1e-10
-    param_bounds = ((-np.inf,np.inf),)*d_synth + ((eps,np.inf),)*d_synth + ((eps,np.inf),) + ((eps,np.inf),)
+
     #######################################
     #######################################
     ############# Load Dataset ############
@@ -85,9 +82,16 @@ def run(arguments):
         X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
         # dataset_filename = '../data/' + arguments.dataset + '.npz'
         # np.savez(dataset_filename, X=X, y=Y)
+    elif arguments.dataset == 'delays':
+        X, Y = model.load_delays_data('../data/' + arguments.dataset + '.npy')
     else:
-        X, Y = model.load_data('../data/' + arguments.dataset + '.npy')
+        X, Y = model.load_data('../data/' + arguments.dataset + '.npz')
     Z = np.hstack((X, Y[:, np.newaxis]))
+
+    # set bounds for Laplace optimization
+    # theta unconstrained, lambda, sigma, tau must be >0
+    eps = 1e-10
+    param_bounds = ((-np.inf, np.inf),) * X.shape[1] + ((eps, np.inf),) * X.shape[1] + ((eps, np.inf),) + ((eps, np.inf),)
 
     ####################################################################
     ####################################################################
@@ -164,41 +168,95 @@ def run(arguments):
             'LAP': lapl,
             'GIGA': giga,
             'UNIF': unif,
-            'IHT': iht}
-    alg = algs[arguments.alg]
+            'IHT': iht,
+            'FULL': None}
+    alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
 
-    print('Building ' + log_suffix)
-    # Recursive alg needs to be run fully each time
-    t0 = time.perf_counter()
-    alg.build(arguments.coreset_size)
-    t_build = time.perf_counter() - t0
+    # print('Building ' + log_suffix)
+    # # Recursive alg needs to be run fully each time
+    # t0 = time.perf_counter()
+    # alg.build(arguments.coreset_size)
+    # t_build = time.perf_counter() - t0
+    #
+    # print('Sampling ' + log_suffix)
 
-    print('Sampling ' + log_suffix)
+    # __get = getattr(alg, "get", None)
+    # if callable(__get):
+    #     wts, pts, idcs = alg.get()
+    #     # Use MCMC on the coreset, measure time taken
+    #     approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts,
+    #                                                                       get_timing=True)
+    # else:
+    #     approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference,
+    #                                                                         get_timing=True)
 
-    __get = getattr(alg, "get", None)
-    if callable(__get):
-        wts, pts, idcs = alg.get()
-        # Use MCMC on the coreset, measure time taken
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts,
-                                                                          get_timing=True)
+    if arguments.alg == 'FULL':
+        # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
+        t_build = 0.
+        if not os.path.exists('full_cache'):
+            os.mkdir('full_cache')
+        print('Checking for cached comparison full samples ' + log_suffix)
+        cache_filename = f'full_cache/full_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
+    elif arguments.alg == 'LAP':
+        # cache laplace approximation mean/covar (no need to rerun for different coreset sizes)
+        if not os.path.exists('lap_cache'):
+            os.mkdir('lap_cache')
+        print('Checking for cached laplace samples ' + log_suffix)
+        cache_filename = f'lap_cache/lap_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+            t_build = float(tmp__['t_b'])
+        else:
+            print('Cache doesn\'t exist, running laplace')
+            print('Building ' + log_suffix)
+            t0 = time.perf_counter()
+            alg.build(arguments.coreset_size)
+            t_build = time.perf_counter() - t0
+            print('Sampling ' + log_suffix)
+            approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, t_b=t_build, allow_pickle=True)
     else:
-        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference,
-                                                                            get_timing=True)
+        # coreset algorithms need to run for each coreset size, no caching
+        print('Building ' + log_suffix)
+        t0 = time.perf_counter()
+        alg.build(arguments.coreset_size)
+        t_build = time.perf_counter() - t0
+        print('Sampling ' + log_suffix)
+        wts, pts, idcs = alg.get()
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
     mu_approx = approx_samples.mean(axis=0)
     Sig_approx = np.cov(approx_samples, rowvar=False)
+    logsig_approx = np.log(np.diag(Sig_approx))
     LSig_approx = np.linalg.cholesky(Sig_approx)
     LSigInv_approx = solve_triangular(LSig_approx, np.eye(LSig_approx.shape[0]), lower=True, overwrite_b=True,
                                       check_finite=False)
     mu_full = full_samples.mean(axis=0)
     Sig_full = np.cov(full_samples, rowvar=False)
+    logsig_full = np.log(np.diag(Sig_full))
     LSig_full = np.linalg.cholesky(Sig_full)
     LSigInv_full = solve_triangular(LSig_full, np.eye(LSig_full.shape[0]), lower=True, overwrite_b=True,
                                     check_finite=False)
     # compute the relative 2 norm error for mean and covariance
     mu_err = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
+    logsig_diag_err = np.linalg.norm(logsig_full - logsig_approx) / np.linalg.norm(logsig_full)
+    cwise_mu_err = np.mean(np.fabs((mu_full - mu_approx) / mu_full))
+    cwise_logsig_diag_err = np.mean(np.fabs((logsig_full - logsig_approx) / logsig_full))
     Sig_err = np.linalg.norm(Sig_approx - Sig_full, ord=2) / np.linalg.norm(Sig_full, ord=2)
     # compute gaussian reverse/forward KL
     rklw = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
@@ -212,9 +270,16 @@ def run(arguments):
     imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=1)
 
     print('Saving ' + log_suffix)
+    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+    #              rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+    #              gauss_stein=gauss_stein, imq_stein=imq_stein)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-                 gauss_stein=gauss_stein, imq_stein=imq_stein)
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
+                 logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
+                 Sig_err=Sig_err
+                # )
+                , gauss_mmd=gauss_mmd, imq_mmd=imq_mmd # )
+                , gauss_stein=gauss_stein, imq_stein=imq_stein)
     print('')
     print('')
 

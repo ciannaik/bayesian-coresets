@@ -152,7 +152,8 @@ def run(arguments):
             'LAP' : lapl,
             'GIGA': giga,
             'UNIF': unif,
-            'IHT':iht}
+            'IHT' : iht,
+            'FULL': None}
     alg = algs[arguments.alg]
 
 
@@ -165,13 +166,61 @@ def run(arguments):
 
     print('Sampling ' + log_suffix)
 
-    __get = getattr(alg, "get", None)
-    if callable(__get):
-        wts, pts, idcs = alg.get()
-        # Use MCMC on the coreset, measure time taken
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+    # __get = getattr(alg, "get", None)
+    # if callable(__get):
+    #     wts, pts, idcs = alg.get()
+    #     # Use MCMC on the coreset, measure time taken
+    #     approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+    # else:
+    #     approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
+
+    if arguments.alg == 'FULL':
+        # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
+        t_build = 0.
+        if not os.path.exists('full_cache'):
+            os.mkdir('full_cache')
+        print('Checking for cached comparison full samples ' + log_suffix)
+        cache_filename = f'full_cache/full_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
+    elif arguments.alg == 'LAP':
+        # cache laplace approximation mean/covar (no need to rerun for different coreset sizes)
+        if not os.path.exists('lap_cache'):
+            os.mkdir('lap_cache')
+        print('Checking for cached laplace samples ' + log_suffix)
+        cache_filename = f'lap_cache/lap_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+            t_build = float(tmp__['t_b'])
+        else:
+            print('Cache doesn\'t exist, running laplace')
+            print('Building ' + log_suffix)
+            t0 = time.perf_counter()
+            alg.build(arguments.coreset_size)
+            t_build = time.perf_counter() - t0
+            print('Sampling ' + log_suffix)
+            approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, t_b=t_build, allow_pickle=True)
     else:
-        approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
+        # coreset algorithms need to run for each coreset size, no caching
+        print('Building ' + log_suffix)
+        t0 = time.perf_counter()
+        alg.build(arguments.coreset_size)
+        t_build = time.perf_counter() - t0
+        print('Sampling ' + log_suffix)
+        wts, pts, idcs = alg.get()
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+
 
 
     print('Evaluation ' + log_suffix)
@@ -179,6 +228,7 @@ def run(arguments):
     mu_approx = approx_samples.mean(axis=0)
     mu_approx_subspace = mu_approx[[i for i in range(d_subspace)] + [-1]]
     Sig_approx = np.cov(approx_samples, rowvar=False)
+    logsig_approx = np.log(np.diag(Sig_approx))
     Sig_approx_subspace = Sig_approx[[i for i in range(d_subspace)] + [-1],:][:,[i for i in range(d_subspace)] + [-1]]
     LSig_approx = np.linalg.cholesky(Sig_approx)
     LSig_approx_subspace = np.linalg.cholesky(Sig_approx_subspace)
@@ -187,6 +237,7 @@ def run(arguments):
     mu_full = full_samples.mean(axis=0)
     mu_full_subspace = mu_full[[i for i in range(d_subspace)] + [-1]]
     Sig_full = np.cov(full_samples, rowvar=False)
+    logsig_full = np.log(np.diag(Sig_full))
     Sig_full_subspace = Sig_full[[i for i in range(d_subspace)] + [-1],:][:,[i for i in range(d_subspace)] + [-1]]
     LSig_full = np.linalg.cholesky(Sig_full)
     LSig_full_subspace = np.linalg.cholesky(Sig_full_subspace)
@@ -195,7 +246,9 @@ def run(arguments):
     # compute the relative 2 norm error for mean and covariance
     mu_err = np.sqrt(((mu_full_subspace - mu_approx_subspace) ** 2).sum()) / np.sqrt((mu_full_subspace ** 2).sum())
     mu_err_full = np.sqrt(((mu_full - mu_approx) ** 2).sum()) / np.sqrt((mu_full ** 2).sum())
-
+    logsig_diag_err = np.linalg.norm(logsig_full - logsig_approx) / np.linalg.norm(logsig_full)
+    cwise_mu_err = np.mean(np.fabs((mu_full - mu_approx) / mu_full))
+    cwise_logsig_diag_err = np.mean(np.fabs((logsig_full - logsig_approx) / logsig_full))
     Sig_err = np.linalg.norm(Sig_approx_subspace - Sig_full_subspace, ord=2)/np.linalg.norm(Sig_full_subspace, ord=2)
     Sig_err_full = np.linalg.norm(Sig_approx - Sig_full, ord=2)/np.linalg.norm(Sig_full, ord=2)
     # compute gaussian reverse/forward KL
@@ -212,7 +265,9 @@ def run(arguments):
 
     print('Saving ' + log_suffix)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
+                 logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
+                 Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
                  gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
                  Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     print('')
@@ -236,7 +291,7 @@ parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
 parser.add_argument('--dataset', type=str, default="criteo",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='UNIF',
+parser.add_argument('--alg', type=str, default='GIGA',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
@@ -279,6 +334,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 

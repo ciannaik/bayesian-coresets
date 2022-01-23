@@ -143,7 +143,7 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
-            'FULL' : None}
+            'FULL': None}
     alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
 
     if arguments.alg == 'FULL':

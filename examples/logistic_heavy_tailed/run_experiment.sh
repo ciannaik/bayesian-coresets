@@ -1,13 +1,13 @@
 #!/bin/bash
 
-for dnm in "synth_lr_cauchy_large"
+for dnm in "criteo"
 do
-    for alg in "LAP" "UNIF" "GIGA" "QNC" "IHT" "SVI"
-#    for alg in "IHT"
+    for alg in "LAP" "UNIF" "GIGA" "IHT" "QNC"
+#    for alg in "UNIF"
     do
-        for ID in 1 2 3
+        for ID in 1
         do
-        	for M in 100 200 500 1000
+        	for M in 100 500 1000
         	do
 				python3 main.py --model lr --dataset $dnm --coreset_size $M --alg $alg --trial $ID run
 			done
