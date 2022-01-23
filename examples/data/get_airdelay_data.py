@@ -148,12 +148,18 @@ for coln in strcols:
     df_airline[coln] = df_airline[coln].apply(convert_miltime_mins)
 
 print('Changing dep_delay and arr_delay to 0 instead of nan if the flight was on time')
-df_airline[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_DEP_TIME == df_airline.DEP_TIME)]['DEP_DELAY'] = 0.
-df_airline[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_ARR_TIME == df_airline.ARR_TIME)]['ARR_DELAY'] = 0.
+df_airline.loc[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_DEP_TIME == df_airline.DEP_TIME), 'DEP_DELAY'] = 0.
+df_airline.loc[(df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.) & (df_airline.CRS_ARR_TIME == df_airline.ARR_TIME), 'ARR_DELAY'] = 0.
 print('Checking that any nans in dep/arr delay correspond to cancelled/missing flights')
 if not ((df_airline[df_airline.DEP_DELAY.isnull()].CANCELLED == 1.) | (df_airline[df_airline.DEP_DELAY.isnull()].DIVERTED == 1.)).all():
     print("Error: found dep_delay null but flight wasnt cancelled or diverted")
     print(df_airline[df_airline.DEP_DELAY.isnull() & (df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.)])
+    quit()
+if not ((df_airline[df_airline.ARR_DELAY.isnull()].CANCELLED == 1.) | (df_airline[df_airline.ARR_DELAY.isnull()].DIVERTED == 1.)).all():
+    print("Error: found arr_delay null but flight wasnt cancelled or diverted")
+    print(df_airline[df_airline.ARR_DELAY.isnull() & (df_airline.CANCELLED==0.) & (df_airline.DIVERTED==0.)])
+    quit()
+
 print('Changing delay types to 0 for missing entries')
 del_colns = ['CARRIER_DELAY', 'WEATHER_DELAY', 'NAS_DELAY', 'SECURITY_DELAY', 'LATE_AIRCRAFT_DELAY']
 for coln in del_colns:
@@ -180,10 +186,12 @@ for wcode in weather_codes:
     for i in range(df_dates.shape[0]):
         date_string = f"{df_dates.iloc[i].YEAR}-{df_dates.iloc[i].MONTH}-{df_dates.iloc[i].DAY_OF_MONTH}"
         html_path = 'weather_data/'+wcode+'-'+date_string+'.html'
-        print(f"Checking if weather data {html_path} exists")
+        sys.stdout.write(f"Checking if weather data {html_path} exists                                                                               \r")
+        sys.stdout.flush()
         # get the html file
         if not os.path.exists(html_path):
-            print(f"Doesn't exist, downloading")
+            sys.stdout.write(f"{html_path} doesn't exist, downloading                                                                                \r")
+            sys.stdout.flush()
             req_prefix = 'https://www.wunderground.com/history/daily/'
             req_url = req_prefix + wcode +'/date/' + date_string
             #resp = requests.get()
@@ -199,8 +207,10 @@ for wcode in weather_codes:
             with open(html_path, 'w') as f:
                 f.write(html)
             driver.quit()
-            print("Done downloading, sleeping for 30s to be nice to the webserver (any quicker than that causes throttling)")
+            sys.stdout.write(f"Done downloading {html_path}, sleeping for 30s to be nice to the webserver (any quicker than that causes throttling)                              \r")
+            sys.stdout.flush()
             time.sleep(30)
+print('')
 
 print('Constructing dataframe of historic weather data')
 if not os.path.exists('historic_weather.csv'):
