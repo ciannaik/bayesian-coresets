@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for alg in "LAP" "UNIF" "GIGA" "IHT" "QNC"
+for alg in "FULL" "LAP" "UNIF" "GIGA" "IHT" "QNC"
 #for alg in "QNC"
 do
     for ID in 16
