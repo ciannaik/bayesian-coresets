@@ -36,7 +36,7 @@ def load_delays_data(dnm):
     X[:,3:6] = X[:,3:6] - X[:,6:9]
     # drop historial average columns
     X = np.hstack((X[:,:6],X[:,9:]))
-    # Take 10-x for visibility (max is 10, most values are 10
+    # Take 10-x for visibility (max is 10, most values are 10)
     X[:,-2] = 10 - X[:,-2]
     # Center other columns
     m = X[:, 7:11].mean(axis=0)
