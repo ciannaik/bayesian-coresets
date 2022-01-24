@@ -203,14 +203,14 @@ def run(arguments):
     alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
 
 
-    print('Building ' + log_suffix)
-    # Recursive alg needs to be run fully each time
-    t0 = time.perf_counter()
-    alg.build(arguments.coreset_size)
-    t_build = time.perf_counter() - t0
-
-
-    print('Sampling ' + log_suffix)
+    # print('Building ' + log_suffix)
+    # # Recursive alg needs to be run fully each time
+    # t0 = time.perf_counter()
+    # alg.build(arguments.coreset_size)
+    # t_build = time.perf_counter() - t0
+    #
+    #
+    # print('Sampling ' + log_suffix)
 
     # __get = getattr(alg, "get", None)
     # if callable(__get):
@@ -333,7 +333,7 @@ plot_subparser.set_defaults(func=plot)
 parser.add_argument('--data_num', type=int, default='10000', help='Dataset subsample to use')
 parser.add_argument('--n_bases_per_scale', type=int, default=50, help="The number of Radial Basis Functions per scale")#TODO: verify help message
 parser.add_argument('--alg', type=str, default='LAP',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
@@ -369,7 +369,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='16pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='24pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
