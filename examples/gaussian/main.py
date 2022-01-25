@@ -260,7 +260,7 @@ plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--dataset', type=str, default='synth_gauss', choices =['synth_gauss'])
-parser.add_argument('--alg', type=str, default='UNIF',
+parser.add_argument('--alg', type=str, default='SVI',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
@@ -269,8 +269,8 @@ parser.add_argument("--proj_dim", type=int, default=5000,
                     help="The number of samples taken when discretizing log likelihoods")
 parser.add_argument("--n_subsample", type=int, default=10000,
                     help="The number of data points used to compute optimization steps")
-parser.add_argument('--coreset_size', type=int, default=500, help="The coreset size to evaluate")
-parser.add_argument('--opt_itrs', type=str, default=20,
+parser.add_argument('--coreset_size', type=int, default=10, help="The coreset size to evaluate")
+parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
@@ -297,7 +297,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='24pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')

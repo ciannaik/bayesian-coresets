@@ -336,7 +336,7 @@ plot_subparser.add_argument('--plot_height', type=int, default=850, help="Height
 plot_subparser.add_argument('--plot_width', type=int, default=850, help="Width of the plot's html canvas")
 plot_subparser.add_argument('--plot_type', type=str, choices=['line', 'scatter'], default='scatter',
                             help="Type of plot to make")
-plot_subparser.add_argument('--plot_fontsize', type=str, default='24pt', help="Font size for the figure, e.g., 32pt")
+plot_subparser.add_argument('--plot_fontsize', type=str, default='32pt', help="Font size for the figure, e.g., 32pt")
 plot_subparser.add_argument('--plot_toolbar', action='store_true', help="Show the Bokeh toolbar")
 plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
