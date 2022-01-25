@@ -336,6 +336,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 
