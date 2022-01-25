@@ -125,8 +125,9 @@ def line(fig, df, arguments, clr = pal[0], legend = None):
   xy25 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.25)
   xy75 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.75)
   fig.line(xy50[arguments.plot_x], xy50[arguments.plot_y], color=clr, line_width=5, legend_label = legend)
-  fig.line(xy25[arguments.plot_x], xy25[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
-  fig.line(xy75[arguments.plot_x], xy75[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
+  # fig.line(xy25[arguments.plot_x], xy25[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
+  # fig.line(xy75[arguments.plot_x], xy75[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
+  fig.varea(xy50[arguments.plot_x], xy25[arguments.plot_y],xy75[arguments.plot_y], color=clr, alpha=0.3)
 
   #err_xs = []
   #err_ys = []

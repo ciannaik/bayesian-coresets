@@ -255,21 +255,21 @@ def run(arguments):
     rklw = KL(mu_approx_subspace, Sig_approx_subspace, mu_full_subspace, LSigInv_full_subspace.T.dot(LSigInv_full_subspace))
     rklw_full = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
-    # compute mmd discrepancies
-    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
-    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
-    # compute stein discrepancies
-    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
-    gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
-    imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
+    # # compute mmd discrepancies
+    # gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
+    # imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
+    # # compute stein discrepancies
+    # scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
+    # gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
+    # imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
 
     print('Saving ' + log_suffix)
-    results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-                 rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
-                 logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
-                 Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-                 gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
-                 Sig_err_full=Sig_err_full,rklw_full=rklw_full)
+    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+    #              rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
+    #              logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
+    #              Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+    #              gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
+    #              Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     print('')
     print('')
 
@@ -298,7 +298,7 @@ parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=2000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=500, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=1000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -306,7 +306,7 @@ parser.add_argument('--newton_opt_itrs', type=str, default=20,
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=1,
+parser.add_argument('--trial', type=int, default=20,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
@@ -334,6 +334,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
+# arguments.func(arguments)
+run(arguments)
 

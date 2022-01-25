@@ -44,7 +44,7 @@ def run(arguments):
         print('Quitting.')
         quit()
 
-    np.random.seed(arguments.trial)
+    np.random.seed(10)
     bc.util.set_verbosity(arguments.verbosity)
 
     #######################################
@@ -64,10 +64,7 @@ def run(arguments):
     idcs = np.arange(data.shape[0])
     np.random.shuffle(idcs)
     data = data[idcs[:arguments.data_num], :]
-    dataset_filename = '../data/prices2018_10k.npy'
-    np.save(dataset_filename, data)
 
-    data = np.load('../data/prices2018_10k.npy')
 
 
     #log transform the prices
@@ -103,8 +100,11 @@ def run(arguments):
     Y = data[:, 2]
     Z = np.hstack((X, Y[:,np.newaxis]))
     # test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][int(arguments.data_num/100)] for i in range(Z.shape[1])]))
-    test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][20] for i in range(Z.shape[1])]))
-    print(test_bases[0]/test_bases[1])
+    test_bases = np.sort(np.array([np.sort(Z[:, i])[::-1][200] for i in range(Z.shape[1])]))
+    print(test_bases[0])
+
+    np.random.seed(arguments.trial)
+
     #######################################
     #######################################
     ############ Define Model #############
@@ -171,7 +171,7 @@ def run(arguments):
         full_samples, t_full, t_full_per_itr = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
         if not os.path.exists('full_cache'):
             os.mkdir('full_cache')
-        # np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
+        np.savez(cache_filename, samples=full_samples, t=t_full_per_itr, allow_pickle=True)
 
     #######################################
     #######################################
@@ -330,16 +330,16 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--data_num', type=int, default='10000', help='Dataset subsample to use')
+parser.add_argument('--data_num', type=int, default='100000', help='Dataset subsample to use')
 parser.add_argument('--n_bases_per_scale', type=int, default=50, help="The number of Radial Basis Functions per scale")#TODO: verify help message
-parser.add_argument('--alg', type=str, default='LAP',
+parser.add_argument('--alg', type=str, default='GIGA',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=5000,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=5000, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=2000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -347,7 +347,7 @@ parser.add_argument('--newton_opt_itrs', type=str, default=20,
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=16,
+parser.add_argument('--trial', type=int, default=6,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
@@ -375,6 +375,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 

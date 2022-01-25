@@ -107,7 +107,7 @@ class QuasiNewtonCoreset(Coreset):
             grd_norm_variance = np.var(grd_norms)/corevecs.shape[1]
             return grd_norm_variance
         
-        def search_direction(w, tau=0.01):
+        def search_direction(w, tau=0.1):
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                          return_sum=False)
