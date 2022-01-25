@@ -13,6 +13,37 @@ def load_data(dnm):
   data.close()
   return X, Y, Z, None
 
+def load_delays_data(dnm):
+  d = np.load(dnm)
+  d_filtered = d[(d[:, 7] == 0) & (d[:, 8] == 0), :]
+
+  X = np.hstack((d_filtered[:, 0, np.newaxis], d_filtered[:, 6, np.newaxis], d_filtered[:, 9:17], d_filtered[:, 18:]))
+  if np.isnan(X).any():
+    raise ValueError('NaNs in data')
+  Y = (d_filtered[:, 3]>0).astype(int)
+  Y[Y == 0] = -1
+  if np.isnan(Y).any():
+    raise ValueError('NaNs in data')
+  # Transform predictors in X
+  # sin transform for day of week
+  X[:, 0] = np.sin(2 * np.pi * X[:, 0] / 7)
+  # log transform for distance
+  X[:, 2] = np.log(X[:, 2])
+  # subtract historical averages for temps
+  X[:, 3:6] = X[:, 3:6] - X[:, 6:9]
+  # drop historial average columns
+  X = np.hstack((X[:, :6], X[:, 9:]))
+  # Take 10-x for visibility (max is 10, most values are 10)
+  X[:, -2] = 10 - X[:, -2]
+  # Center other columns
+  m = X[:, 7:11].mean(axis=0)
+  X[:, 7:11] -= m
+  m2 = X[:, -1].mean(axis=0)
+  X[:, -1] -= m2
+
+  Z = Y[:, np.newaxis] * X
+  return X, Y, Z, None
+
 def gen_synthetic(n, d_subspace, d_complement):
 
   X = np.zeros((n, d_subspace+d_complement+1))

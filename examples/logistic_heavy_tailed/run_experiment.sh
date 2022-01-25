@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for dnm in "criteo"
+for dnm in "delays"
 do
     for alg in "LAP" "UNIF" "GIGA" "IHT" "QNC" "FULL"
 #    for alg in "UNIF"

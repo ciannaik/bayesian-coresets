@@ -74,6 +74,8 @@ def run(arguments):
         X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
         dataset_filename = '../data/' + arguments.dataset + '.npz'
         np.savez(dataset_filename, X=X, y=Y)
+    elif arguments.dataset == 'delays':
+        X, Y, Z, _ = model.load_delays_data('../data/' + arguments.dataset + '.npy')
     else:
         X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
     stanY = np.zeros(Y.shape[0])
@@ -255,21 +257,21 @@ def run(arguments):
     rklw = KL(mu_approx_subspace, Sig_approx_subspace, mu_full_subspace, LSigInv_full_subspace.T.dot(LSigInv_full_subspace))
     rklw_full = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
-    # # compute mmd discrepancies
-    # gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
-    # imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
-    # # compute stein discrepancies
-    # scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
-    # gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
-    # imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
+    # compute mmd discrepancies
+    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
+    # compute stein discrepancies
+    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
+    gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
+    imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
 
     print('Saving ' + log_suffix)
-    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-    #              rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
-    #              logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
-    #              Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-    #              gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
-    #              Sig_err_full=Sig_err_full,rklw_full=rklw_full)
+    results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
+                 rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
+                 logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
+                 Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+                 gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
+                 Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     print('')
     print('')
 
@@ -289,9 +291,9 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="criteo",
+parser.add_argument('--dataset', type=str, default="delays",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='QNC',
+parser.add_argument('--alg', type=str, default='UNIF',
                     choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
