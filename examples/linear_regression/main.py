@@ -44,7 +44,7 @@ def run(arguments):
         print('Quitting.')
         quit()
 
-    np.random.seed(10)
+    np.random.seed(1)
     bc.util.set_verbosity(arguments.verbosity)
 
     #######################################
@@ -60,10 +60,10 @@ def run(arguments):
     data = np.load('../data/prices2018.npy')
     print('dataset size : ', data.shape)
 
-    print('Subsampling down to '+str(arguments.data_num) + ' points')
-    idcs = np.arange(data.shape[0])
-    np.random.shuffle(idcs)
-    data = data[idcs[:arguments.data_num], :]
+    # print('Subsampling down to '+str(arguments.data_num) + ' points')
+    # idcs = np.arange(data.shape[0])
+    # np.random.shuffle(idcs)
+    # data = data[idcs[:arguments.data_num], :]
 
 
 
@@ -137,6 +137,26 @@ def run(arguments):
         else:
             return samples
 
+    print('Creating naive MCMC sampler ' + log_suffix)
+
+    def sample_w_naive(n, wts, pts, get_timing=False):
+        if pts.shape[0] > 0:
+            sampler_data = {'z': pts, 'w': wts, 'd': X.shape[1], 'n': pts.shape[0],
+                            'th_init': mu0 * np.ones(X.shape[1])}
+        else:
+            sampler_data = {'z': np.zeros((1, X.shape[1])), 'w': np.zeros(1), 'd': X.shape[1],
+                            'th_init': mu0 * np.ones(X.shape[1]), 'n': 1}
+        # Naive MCMC sampling using Metropolis-Hastings
+        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample_naive(sampler_data, n, 'linear_regression', model.MH_proposal,
+                                                            model.log_MH_transition_ratio,
+                                                            lambda z, th, wts: model.log_joint(z, th, wts, sig, mu0,
+                                                                                               sig0),
+                                                            arguments.trial)
+        if get_timing:
+            return samples, t_mcmc, t_mcmc_per_itr
+        else:
+            return samples
+
     #def sample_w(n, wts, pts, get_timing=False):
     #    # passing in X, Y into the stan sampler
     #    # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
@@ -199,26 +219,9 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
-            'FULL': None}
-    alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
-
-
-    # print('Building ' + log_suffix)
-    # # Recursive alg needs to be run fully each time
-    # t0 = time.perf_counter()
-    # alg.build(arguments.coreset_size)
-    # t_build = time.perf_counter() - t0
-    #
-    #
-    # print('Sampling ' + log_suffix)
-
-    # __get = getattr(alg, "get", None)
-    # if callable(__get):
-    #     wts, pts, idcs = alg.get()
-    #     # Use MCMC on the coreset, measure time taken
-    #     approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
-    # else:
-    #     approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference, get_timing=True)
+            'FULL': None,
+            'NAIVE': None}
+    alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
 
     if arguments.alg == 'FULL':
         # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
@@ -235,6 +238,22 @@ def run(arguments):
         else:
             print('Cache doesn\'t exist, running sampler')
             approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
+    elif arguments.alg == 'NAIVE':
+        # cache naive mcmc samples per trial (no need to rerun for different coreset sizes)
+        t_build = 0.
+        if not os.path.exists('naive_cache'):
+            os.mkdir('naive_cache')
+        print('Checking for cached comparison naive samples ' + log_suffix)
+        cache_filename = f'naive_cache/naive_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w_naive(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
             np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
     elif arguments.alg == 'LAP':
         # cache laplace approximation mean/covar (no need to rerun for different coreset sizes)
@@ -330,16 +349,16 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--data_num', type=int, default='100000', help='Dataset subsample to use')
+parser.add_argument('--data_num', type=int, default='1009686', help='Dataset subsample to use')
 parser.add_argument('--n_bases_per_scale', type=int, default=50, help="The number of Radial Basis Functions per scale")#TODO: verify help message
-parser.add_argument('--alg', type=str, default='GIGA',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL'],
+parser.add_argument('--alg', type=str, default='UNIF',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL','NAIVE'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=5000,
+parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=2000, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=500, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -347,7 +366,7 @@ parser.add_argument('--newton_opt_itrs', type=str, default=20,
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=6,
+parser.add_argument('--trial', type=int, default=60,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")

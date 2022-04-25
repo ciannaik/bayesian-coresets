@@ -23,7 +23,9 @@ from bayesiancoresets.snnls import IHT
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
-    df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference'])
+    # df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference'])
+    df = results.load_matching(arguments, match = ['model',  'dataset'])
+
     # call the generic plot function
     plotting.plot(arguments, df)
 
@@ -97,6 +99,26 @@ def run(arguments):
         else:
             return samples
 
+    print('Creating naive MCMC sampler ' + log_suffix)
+
+    def sample_w_naive(n, wts, pts, get_timing=False):
+        if pts.shape[0] > 0:
+            sampler_data = {'z': pts, 'w': wts, 'd': X.shape[1], 'n': pts.shape[0],
+                            'th_init': mu0 * np.ones(X.shape[1])}
+        else:
+            sampler_data = {'z': np.zeros((1, X.shape[1])), 'w': np.zeros(1), 'd': X.shape[1],
+                            'th_init': mu0 * np.ones(X.shape[1]), 'n': 1}
+        # Naive MCMC sampling using Metropolis-Hastings
+        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample_naive(sampler_data, n, 'gaussian', model.MH_proposal,
+                                                            model.log_MH_transition_ratio,
+                                                            lambda z, th, wts: model.log_joint(z, th, wts, sig, mu0,
+                                                                                               sig0),
+                                                            arguments.trial)
+        if get_timing:
+            return samples, t_mcmc, t_mcmc_per_itr
+        else:
+            return samples
+
     #######################################
     #######################################
     ###### Get samples on the full data ###
@@ -125,11 +147,11 @@ def run(arguments):
 
     print('Creating coreset construction objects ' + log_suffix)
     # create coreset construction objects
+    # projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     unif = bc.UniformSamplingCoreset(X)
     giga = bc.HilbertCoreset(X, projector)
-    sparsevi = bc.SparseVICoreset(X, projector, n_subsample_select=arguments.n_subsample, n_subsample_opt=arguments.n_subsample,
-                                  opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
+    sparsevi = bc.SparseVICoreset(X, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
 				    lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
@@ -143,8 +165,9 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
-            'FULL': None}
-    alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
+            'FULL': None,
+            'NAIVE': None}
+    alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
 
     if arguments.alg == 'FULL':
         # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
@@ -161,6 +184,22 @@ def run(arguments):
         else:
             print('Cache doesn\'t exist, running sampler')
             approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
+    elif arguments.alg == 'NAIVE':
+        # cache naive mcmc samples per trial (no need to rerun for different coreset sizes)
+        t_build = 0.
+        if not os.path.exists('naive_cache'):
+            os.mkdir('naive_cache')
+        print('Checking for cached comparison naive samples ' + log_suffix)
+        cache_filename = f'naive_cache/naive_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w_naive(arguments.samples_inference, np.ones(X.shape[0]), X, get_timing=True)
             np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
     elif arguments.alg == 'LAP':
         # cache laplace approximation mean/covar (no need to rerun for different coreset sizes)
@@ -191,7 +230,8 @@ def run(arguments):
         t_build = time.perf_counter() - t0
         print('Sampling ' + log_suffix)
         wts, pts, idcs = alg.get()
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+        # approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w_naive(arguments.samples_inference, wts, pts, get_timing=True)
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
@@ -259,23 +299,23 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--dataset', type=str, default='synth_gauss', choices =['synth_gauss'])
-parser.add_argument('--alg', type=str, default='SVI',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL'],
+parser.add_argument('--dataset', type=str, default='synth_gauss_large', choices =['synth_gauss_large'])
+parser.add_argument('--alg', type=str, default='LAP',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL', 'NAIVE'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=5000,
+parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
 parser.add_argument("--n_subsample", type=int, default=10000,
                     help="The number of data points used to compute optimization steps")
-parser.add_argument('--coreset_size', type=int, default=10, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=10000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations")
 parser.add_argument('--step_sched', type=str, default="lambda i : 1./(i+1)",
                     help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 
-parser.add_argument('--trial', type=int, default=2,
+parser.add_argument('--trial', type=int, default=93,
                     help="The trial number - used to initialize random number generation (for replicability)")
 parser.add_argument('--results_folder', type=str, default="results/",
                     help="This script will save results in this folder")
@@ -303,6 +343,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-arguments.func(arguments)
-# run(arguments)
+# arguments.func(arguments)
+run(arguments)
 

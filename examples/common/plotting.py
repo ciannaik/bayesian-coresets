@@ -124,6 +124,8 @@ def line(fig, df, arguments, clr = pal[0], legend = None):
   xy50 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.5)
   xy25 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.25)
   xy75 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.75)
+  xy10 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.1)
+  xy90 = df[[arguments.plot_x, arguments.plot_y]].groupby(arguments.groupby, as_index=False).quantile(.9)
   fig.line(xy50[arguments.plot_x], xy50[arguments.plot_y], color=clr, line_width=5, legend_label = legend)
   # fig.line(xy25[arguments.plot_x], xy25[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')
   # fig.line(xy75[arguments.plot_x], xy75[arguments.plot_y], color=clr, line_width=5, legend_label = legend, line_dash='dashed')

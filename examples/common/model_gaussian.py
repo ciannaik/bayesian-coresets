@@ -24,7 +24,6 @@ def grad_log_likelihood(x, th, sig):
 def grad_log_prior(th, mu0, sig0):
   th = np.atleast_2d(th)
   return -(th - mu0)/sig0**2
-
 #def grad_log_joint(x, th, wts, sig, mu0, sig0):
 #  return (wts[:, np.newaxis, np.newaxis]*grad_log_likelihood(x, th, sig)).sum(axis=0) + grad_log_prior(th, mu0, sig0)
 
@@ -69,4 +68,12 @@ def KL(mu0, Sig0, mu1, Sig1inv):
   t3 = -np.linalg.slogdet(Sig1inv)[1] - np.linalg.slogdet(Sig0)[1]
   return 0.5*(t1+t2+t3-mu0.shape[0])
 
+def MH_proposal(th):
+  th = np.atleast_2d(th)
+  th_new = th + 0.1*np.random.randn(1,th.shape[1])
+  return th_new
+
+def log_MH_transition_ratio(th,th_new):
+  # Symmetric proposal so log transition ratio is 0
+  return 0
 

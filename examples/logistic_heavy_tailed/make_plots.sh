@@ -8,7 +8,7 @@
 #done
 
 #for dnm in "synth_lr" "phishing" "ds1"
-for dnm in "delays"
+for dnm in "delays_large"
 do
 #    python3 main.py --model lr --dataset $dnm plot coreset_size mu_err --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Mean Error"
 #    python3 main.py --model lr --dataset $dnm plot coreset_size Sig_err --plot_toolbar --groupby coreset_size --plot_type line --plot_legend alg --plot_x_label "Coreset Size" --plot_y_label "Cov Error"

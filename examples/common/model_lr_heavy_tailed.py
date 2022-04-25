@@ -33,13 +33,14 @@ def load_delays_data(dnm):
   X[:, 3:6] = X[:, 3:6] - X[:, 6:9]
   # drop historial average columns
   X = np.hstack((X[:, :6], X[:, 9:]))
-  # Take 10-x for visibility (max is 10, most values are 10)
-  X[:, -2] = 10 - X[:, -2]
+  # Remove visibility column - can be same as intercept when subsampling
+  X = np.hstack((X[:, :-2], X[:, -1, np.newaxis]))
   # Center other columns
-  m = X[:, 7:11].mean(axis=0)
-  X[:, 7:11] -= m
-  m2 = X[:, -1].mean(axis=0)
-  X[:, -1] -= m2
+  m = X[:, 7:].mean(axis=0)
+  X[:, 7:] -= m
+
+  # Add intercept term
+  X = np.hstack((X, np.ones((X.shape[0], 1), dtype=X.dtype)))
 
   Z = Y[:, np.newaxis] * X
   return X, Y, Z, None
@@ -138,6 +139,14 @@ def diag_hess_th_log_prior(th, sig0):
 def diag_hess_th_log_joint(z, th, wts, sig0):
   return diag_hess_th_log_prior(th, sig0) + (wts[:, np.newaxis, np.newaxis]*diag_hess_th_log_likelihood(z, th)).sum(axis=0)
 
+def MH_proposal(th):
+  th = np.atleast_2d(th)
+  th_new = th + 0.1*np.random.randn(1,th.shape[1])
+  return th_new
+
+def log_MH_transition_ratio(th,th_new):
+  # Symmetric proposal so log transition ratio is 0
+  return 0
 
 stan_code = """
 data {

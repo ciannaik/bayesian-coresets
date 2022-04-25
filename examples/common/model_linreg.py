@@ -56,6 +56,15 @@ def weighted_post_sampler(n, z, w, sig, mu0, sig0):
         USigp = sig0*np.eye(x.shape[1])
     return mup + USigp.dot(np.random.randn(x.shape[1], n)).T
 
+def MH_proposal(th):
+  th = np.atleast_2d(th)
+  th_new = th + 0.1*np.random.randn(1,th.shape[1])
+  return th_new
+
+def log_MH_transition_ratio(th,th_new):
+  # Symmetric proposal so log transition ratio is 0
+  return 0
+
 stan_code = """
 data {
   int<lower=0> n; // number of observations

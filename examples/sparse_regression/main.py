@@ -82,7 +82,7 @@ def run(arguments):
         X, Y = model.gen_synthetic(N_synth, d_synth, d_active, sig)
         # dataset_filename = '../data/' + arguments.dataset + '.npz'
         # np.savez(dataset_filename, X=X, y=Y)
-    elif arguments.dataset == 'delays':
+    elif arguments.dataset == 'delays' or arguments.dataset == 'delays_medium' or arguments.dataset == 'delays_large':
         X, Y = model.load_delays_data('../data/' + arguments.dataset + '.npy')
     else:
         X, Y = model.load_data('../data/' + arguments.dataset + '.npz')
@@ -114,6 +114,27 @@ def run(arguments):
                                                        model.stan_code, arguments.trial)
 
         samples = np.hstack((_samples['theta'].T, _samples['lambda'].T, _samples['sig'].T, _samples['tau'].T))
+        if get_timing:
+            return samples, t_mcmc, t_mcmc_per_itr
+        else:
+            return samples
+
+    print('Creating naive MCMC sampler ' + log_suffix)
+
+    def sample_w_naive(n, wts, pts, get_timing=False):
+        if pts.shape[0] > 0:
+            sampler_data = {'z': pts, 'w': wts, 'd': Z.shape[1], 'n': pts.shape[0],
+                            'th_init': np.ones(Z.shape[1])}
+        else:
+            sampler_data = {'z': np.zeros((1, Z.shape[1])), 'w': np.zeros(1), 'd': Z.shape[1],
+                            'th_init': np.ones(Z.shape[1]), 'n': 1}
+        # Naive MCMC sampling using Metropolis-Hastings
+        samples, t_mcmc, t_mcmc_per_itr = mcmc.sample_naive(sampler_data, n, 'sparse_regression', model.MH_proposal,
+                                                            lambda th, th_new: model.model.log_MH_transition_ratio(th, th_new, X.shape[1]),
+                                                            model.log_MH_transition_ratio,
+                                                            lambda z, th, wts: model.log_joint(z, th, wts, sig0, a0,
+                                                                                               b0),
+                                                            arguments.trial)
         if get_timing:
             return samples, t_mcmc, t_mcmc_per_itr
         else:
@@ -169,26 +190,9 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT': iht,
-            'FULL': None}
-    alg = algs[arguments.alg] if arguments.alg != 'FULL' else None
-
-    # print('Building ' + log_suffix)
-    # # Recursive alg needs to be run fully each time
-    # t0 = time.perf_counter()
-    # alg.build(arguments.coreset_size)
-    # t_build = time.perf_counter() - t0
-    #
-    # print('Sampling ' + log_suffix)
-
-    # __get = getattr(alg, "get", None)
-    # if callable(__get):
-    #     wts, pts, idcs = alg.get()
-    #     # Use MCMC on the coreset, measure time taken
-    #     approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts,
-    #                                                                       get_timing=True)
-    # else:
-    #     approx_samples, t_approx_sampling, t_approx_per_sample = alg.sample(arguments.samples_inference,
-    #                                                                         get_timing=True)
+            'FULL': None,
+            'NAIVE': None}
+    alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
 
     if arguments.alg == 'FULL':
         # cache full mcmc samples per trial (no need to rerun for different coreset sizes)
@@ -205,6 +209,23 @@ def run(arguments):
         else:
             print('Cache doesn\'t exist, running sampler')
             approx_samples, t_full, t_approx_per_sample = sample_w(arguments.samples_inference, np.ones(Z.shape[0]), Z, get_timing=True)
+            np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
+    elif arguments.alg == 'NAIVE':
+        # cache naive mcmc samples per trial (no need to rerun for different coreset sizes)
+        t_build = 0.
+        if not os.path.exists('naive_cache'):
+            os.mkdir('naive_cache')
+        print('Checking for cached comparison naive samples ' + log_suffix)
+        cache_filename = f'naive_cache/naive_samples_{arguments.trial}.npz'
+        if os.path.exists(cache_filename):
+            print('Cache exists, loading')
+            tmp__ = np.load(cache_filename)
+            approx_samples = tmp__['samples']
+            t_approx_per_sample = float(tmp__['t'])
+        else:
+            print('Cache doesn\'t exist, running sampler')
+            approx_samples, t_full, t_approx_per_sample = sample_w_naive(arguments.samples_inference,
+                                                                         np.ones(Z.shape[0]), Z, get_timing=True)
             np.savez(cache_filename, samples=approx_samples, t=t_approx_per_sample, allow_pickle=True)
     elif arguments.alg == 'LAP':
         # cache laplace approximation mean/covar (no need to rerun for different coreset sizes)
@@ -264,10 +285,10 @@ def run(arguments):
     # compute mmd discrepancies
     gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=1)
     imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
-    # compute stein discrepancies
-    scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0, a0, b0)
-    gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=1)
-    imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=1)
+    # # compute stein discrepancies
+    # scores_approx = model.grad_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0, a0, b0)
+    # gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=1)
+    # imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=1)
 
     print('Saving ' + log_suffix)
     # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
@@ -278,8 +299,9 @@ def run(arguments):
                  logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
                  Sig_err=Sig_err
                 # )
-                , gauss_mmd=gauss_mmd, imq_mmd=imq_mmd # )
-                , gauss_stein=gauss_stein, imq_stein=imq_stein)
+                , gauss_mmd=gauss_mmd, imq_mmd=imq_mmd )
+                # , gauss_stein=gauss_stein
+                # , imq_stein=imq_stein)
     print('')
     print('')
 
@@ -297,16 +319,16 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--dataset', type=str, default="delays",
+parser.add_argument('--dataset', type=str, default="delays_medium",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='UNIF',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT','FULL'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT','FULL','NAIVE'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=2000,
+parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=1000, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,

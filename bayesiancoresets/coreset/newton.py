@@ -3,6 +3,7 @@ from ..util.errors import NumericalPrecisionError
 from ..util.opt import nn_opt, an_opt
 from .coreset import Coreset
 from scipy.linalg import solve_triangular
+import time
 
 class QuasiNewtonCoreset(Coreset):
     def __init__(self, data, projector, n_subsample_opt=None, opt_itrs=20, augment_sample=False, **kw):
@@ -95,6 +96,7 @@ class QuasiNewtonCoreset(Coreset):
         def grad_norm_variance(w):
             # Tune the number of samples needed to reduce the noise
             # of the stochastic Newton step below a certain threshold
+            t0 = time.perf_counter()
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                          return_sum=False)
@@ -105,9 +107,13 @@ class QuasiNewtonCoreset(Coreset):
 
             grd_norms = np.sqrt(np.sum(grd_samples ** 2, axis=0))
             grd_norm_variance = np.var(grd_norms)/corevecs.shape[1]
+
+            t_sample = time.perf_counter() - t0
+            print("Time taken: {} seconds".format(t_sample))
             return grd_norm_variance
         
-        def search_direction(w, tau=0.1):
+        def search_direction(w, tau=0.01):
+            t0 = time.perf_counter()
             vecs_sum, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,return_sum=True)
             # vecs, sum_scaling, sub_idcs, corevecs = self._get_projection(self.n_subsample_opt, w, self.pts,
             #                                                                          return_sum=False)
@@ -117,11 +123,13 @@ class QuasiNewtonCoreset(Coreset):
             corevecs_cov = corevecs.dot(corevecs.T) / corevecs.shape[1]
             # add regularization term to hessian
             np.fill_diagonal(corevecs_cov, corevecs_cov.diagonal() + tau)
-            print("Quasi-Hessian condition number: {}".format(np.linalg.cond(corevecs_cov)))
+            # print("Quasi-Hessian condition number: {}".format(np.linalg.cond(corevecs_cov)))
             grd = (corevecs.dot(resid) / corevecs.shape[1])
             print("gradient norm: {}".format(np.sqrt(((grd)**2).sum())))
             # output gradient of weights at idcs
             search_direction = np.linalg.solve(corevecs_cov, grd)
+            t_sample = time.perf_counter() - t0
+            print("Time taken: {} seconds".format(t_sample))
             return search_direction
 
         def grd(w):

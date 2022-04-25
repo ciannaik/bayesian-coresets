@@ -131,6 +131,19 @@ def hess_log_joint(z, prm, w, sig0, a0, b0):
         hess[j,:,:] -= 1.1*np.abs(np.min(np.diag(hess[j,:,:])))*np.eye(hess.shape[1],hess.shape[2])
     return hess
 
+def MH_proposal(th):
+  th = np.atleast_2d(th)
+  th_new = th + 0.01*np.random.randn(1,th.shape[1])
+  return th_new
+
+def log_MH_transition_ratio(th,th_new, d):
+  # Symmetric proposal so log transition ratio is 0
+  # Need to reject any proposal that contains negative values for lamda, tau or sigma
+  th_new = np.atleast_2d(th_new)
+  if np.any(th_new[:,d:]<=0):
+      return -np.inf
+  return 0
+
 stan_code = """
 data {
   int<lower=0> n; // number of observations

@@ -17,12 +17,22 @@ class BlackBoxProjector(Projector):
         self.update(np.array([]), np.array([]))
 
     def project(self, pts, grad=False, return_sum=False):
+        # if return_sum:
+        #     lls_sum = 0
+        #     for i in range(pts.shape[0]):
+        #         lls_current = self.loglikelihood(pts[i, :], self.samples)
+        #         lls_current -= lls_current.mean(axis=1)[:, np.newaxis]
+        #         lls_sum += lls_current
+        #     return lls_sum.ravel()
         if return_sum:
+            # Calculate sum in batches
+            num_batches = 1000
             lls_sum = 0
-            for i in range(pts.shape[0]):
-                lls_current = self.loglikelihood(pts[i, :], self.samples)
+            pts_batches = np.array_split(pts,num_batches)
+            for i in range(num_batches):
+                lls_current = self.loglikelihood(pts_batches[i], self.samples)
                 lls_current -= lls_current.mean(axis=1)[:, np.newaxis]
-                lls_sum += lls_current
+                lls_sum += lls_current.sum(axis=0)
             return lls_sum.ravel()
         else:
             lls = self.loglikelihood(pts, self.samples)
