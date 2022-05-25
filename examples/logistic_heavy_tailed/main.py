@@ -19,7 +19,6 @@ import stein
 from model_gaussian import KL
 from bayesiancoresets.snnls import IHT
 
-
 def plot(arguments):
     # load the dataset of results that matches these input arguments
     df = results.load_matching(arguments, match = ['model', 'dataset', 'samples_inference', 'proj_dim', 'opt_itrs', 'step_sched'])
@@ -43,7 +42,7 @@ def run(arguments):
         print('Quitting.')
         quit()
 
-    np.random.seed(arguments.trial)
+    np.random.seed(1)
     bc.util.set_verbosity(arguments.verbosity)
 
     #######################################
@@ -74,13 +73,22 @@ def run(arguments):
         X, Y, Z, _ = model.gen_synthetic(N_synth, d_subspace, d_complement)
         dataset_filename = '../data/' + arguments.dataset + '.npz'
         np.savez(dataset_filename, X=X, y=Y)
-    elif arguments.dataset == 'delays' or arguments.dataset == 'delays_large':
+    elif arguments.dataset == 'delays' or arguments.dataset == 'delays_medium':
         X, Y, Z, _ = model.load_delays_data('../data/' + arguments.dataset + '.npy')
     else:
         X, Y, Z, _ = model.load_data('../data/' + arguments.dataset + '.npz')
     stanY = np.zeros(Y.shape[0])
     stanY[:] = Y
     stanY[stanY == -1] = 0
+
+    print('Subsampling down to '+str(100000) + ' points')
+    idcs = np.arange(Z.shape[0])
+    np.random.shuffle(idcs)
+    Z = Z[idcs[:100000], :]
+    X = X[idcs[:100000], :]
+    Y = Y[idcs[:100000]]
+
+    np.random.seed(arguments.trial)
 
     ####################################################################
     ####################################################################
@@ -125,6 +133,33 @@ def run(arguments):
         else:
             return samples
 
+    if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+        t0 = time.perf_counter()
+        pi_hat_lap = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0],
+                        lambda th : model.grad_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:],
+                                        np.zeros(Z.shape[1]),
+                        hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
+        pi_hat_lap.build(1)
+        t_lap = time.perf_counter() - t0
+        mu_lap = pi_hat_lap.th
+        LSig_lap = pi_hat_lap.LSig
+    else:
+        mu_lap = np.zeros(Z.shape[1])
+        LSig_lap = np.identity(Z.shape[1])
+
+    def sample_w_lap(n, wts, pts, get_timing=False):
+        t0 = time.perf_counter()
+        # mu_full = full_samples.mean(axis=0)
+        # Sig_full = np.cov(full_samples, rowvar=False)
+        # LSig_full = np.linalg.cholesky(Sig_full)
+        # samples = mu_full + np.random.randn(n, Z.shape[1]).dot(LSig_full.T)
+        samples = mu_lap + np.random.randn(n, Z.shape[1]).dot(LSig_lap.T)
+        t_total = time.perf_counter() - t0
+        t_per = t_total / n
+        if get_timing:
+            return samples, t_total, t_per
+        else:
+            return samples
 
     #######################################
     #######################################
@@ -146,7 +181,6 @@ def run(arguments):
             os.mkdir('mcmc_cache')
         np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
-
     #######################################
     #######################################
     ## Step 4: Construct Coreset
@@ -157,8 +191,11 @@ def run(arguments):
     # create coreset construction objects
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
                                                 model.grad_z_log_likelihood)
+    lap_projector = bc.BlackBoxProjector(sample_w_lap, arguments.proj_dim, model.log_likelihood,
+                                                model.grad_z_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
+    giga_lap = bc.HilbertCoreset(Z, lap_projector)
     sparsevi = bc.SparseVICoreset(Z, projector, n_subsample_select=1000, n_subsample_opt=1000,
                                   opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
@@ -167,6 +204,7 @@ def run(arguments):
                                     np.zeros(Z.shape[1]),
 				    hess_log_joint = lambda th : model.hess_th_log_joint(Z, th, np.ones(Z.shape[0]), sig0)[0,:,:])
     iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
+    iht_lap = bc.HilbertCoreset(Z, lap_projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -174,6 +212,8 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
+            'GIGA-LAP': giga_lap,
+            'IHT-LAP': iht_lap,
             'FULL': None,
             'NAIVE': None}
     alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
@@ -238,6 +278,8 @@ def run(arguments):
         t0 = time.perf_counter()
         alg.build(arguments.coreset_size)
         t_build = time.perf_counter() - t0
+        if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+            t_build += t_lap
         print('Sampling ' + log_suffix)
         wts, pts, idcs = alg.get()
         approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
@@ -276,26 +318,21 @@ def run(arguments):
     rklw = KL(mu_approx_subspace, Sig_approx_subspace, mu_full_subspace, LSigInv_full_subspace.T.dot(LSigInv_full_subspace))
     rklw_full = KL(mu_approx, Sig_approx, mu_full, LSigInv_full.T.dot(LSigInv_full))
     fklw = KL(mu_full, Sig_full, mu_approx, LSigInv_approx.T.dot(LSigInv_approx))
-    # # compute mmd discrepancies
-    # gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
-    # imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
-    # # compute stein discrepancies
-    # scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
-    # gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
-    # imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
+    # compute mmd discrepancies
+    gauss_mmd = stein.gauss_mmd(approx_samples, full_samples,sigma=2)
+    imq_mmd = stein.imq_mmd(approx_samples, full_samples,sigma=1)
+    # compute stein discrepancies
+    scores_approx = model.grad_th_log_joint(Z, approx_samples, np.ones(Z.shape[0]), sig0)
+    gauss_stein = stein.gauss_stein(approx_samples, scores_approx,sigma=0.5)
+    imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=0.5)
 
     print('Saving ' + log_suffix)
-    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-    #              rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
-    #              logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
-    #              Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-    #              gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
-    #              Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
                  logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
-                 Sig_err=Sig_err, mu_err_full=mu_err_full,
-                 Sig_err_full=Sig_err_full, rklw_full=rklw_full)
+                 Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
+                 gauss_stein=gauss_stein, imq_stein=imq_stein, mu_err_full=mu_err_full,
+                 Sig_err_full=Sig_err_full,rklw_full=rklw_full)
     print('')
     print('')
 
@@ -315,16 +352,16 @@ plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--model', type=str, default="lr", choices=["lr", "poiss"],
                     help="The model to use.")  # must be one of linear regression or poisson regression
-parser.add_argument('--dataset', type=str, default="criteo_large",
-                    help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
-parser.add_argument('--alg', type=str, default='QNC',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL','NAIVE'],
+parser.add_argument('--dataset', type=str, default="delays_medium",
+                    help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy, delays, criteo, delays_medium, criteo_large
+parser.add_argument('--alg', type=str, default='IHT-LAP',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL','NAIVE', 'GIGA-LAP', 'IHT-LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
-parser.add_argument("--proj_dim", type=int, default=2000,
+parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=50, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,
@@ -360,6 +397,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 

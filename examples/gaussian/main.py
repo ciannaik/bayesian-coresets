@@ -119,6 +119,31 @@ def run(arguments):
         else:
             return samples
 
+    if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+        t0 = time.perf_counter()
+        pi_hat_lap = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
+                                            lambda th : model.grad_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:],
+                                            np.zeros(X.shape[1]),
+                                            diag_hess_log_joint = lambda th : model.hess_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:])
+        pi_hat_lap.build(1)
+        t_lap = time.perf_counter() - t0
+        mu_lap = pi_hat_lap.th
+        LSig_lap = pi_hat_lap.LSig
+
+    else:
+        mu_lap = np.zeros(X.shape[1])
+        LSig_lap = np.identity(X.shape[1])
+
+    def sample_w_lap(n, wts, pts, get_timing=False):
+        t0 = time.perf_counter()
+        samples = mu_lap + LSig_lap*np.random.randn(n, X.shape[1])
+        t_total = time.perf_counter() - t0
+        t_per = t_total/n
+        if get_timing:
+            return samples, t_total, t_per
+        else:
+            return samples
+
     #######################################
     #######################################
     ###### Get samples on the full data ###
@@ -149,8 +174,10 @@ def run(arguments):
     # create coreset construction objects
     # projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
+    lap_projector = bc.BlackBoxProjector(sample_w_lap, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     unif = bc.UniformSamplingCoreset(X)
     giga = bc.HilbertCoreset(X, projector)
+    giga_lap = bc.HilbertCoreset(X, lap_projector)
     sparsevi = bc.SparseVICoreset(X, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(X, projector, opt_itrs=arguments.opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th : model.log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0],
@@ -158,6 +185,7 @@ def run(arguments):
                                     np.zeros(X.shape[1]),
 				    diag_hess_log_joint = lambda th : model.hess_log_joint(X, th, np.ones(X.shape[0]), sig, mu0, sig0)[0,:])
     iht = bc.HilbertCoreset(X, projector, snnls=IHT)
+    iht_lap = bc.HilbertCoreset(X, lap_projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -165,6 +193,8 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
+            'GIGA-LAP': giga_lap,
+            'IHT-LAP': iht_lap,
             'FULL': None,
             'NAIVE': None}
     alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
@@ -228,10 +258,11 @@ def run(arguments):
         t0 = time.perf_counter()
         alg.build(arguments.coreset_size)
         t_build = time.perf_counter() - t0
+        if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+            t_build += t_lap
         print('Sampling ' + log_suffix)
         wts, pts, idcs = alg.get()
-        # approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
-        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w_naive(arguments.samples_inference, wts, pts, get_timing=True)
+        approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
 
     print('Evaluation ' + log_suffix)
     # get full/approx posterior mean/covariance
@@ -300,10 +331,10 @@ plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
 parser.add_argument('--dataset', type=str, default='synth_gauss_large', choices =['synth_gauss_large'])
-parser.add_argument('--alg', type=str, default='LAP',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL', 'NAIVE'],
+parser.add_argument('--alg', type=str, default='IHT-LAP',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT', 'FULL', 'NAIVE', 'GIGA-LAP', 'IHT-LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
-parser.add_argument("--samples_inference", type=int, default=10000,
+parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
@@ -343,6 +374,6 @@ plot_subparser.add_argument('--groupby', type=str,
                             help='The command line argument group rows by before plotting. No groupby means plotting raw data; groupby will do percentile stats for all data with the same groupby value. E.g. --groupby Ms in a scatter plot will compute result statistics for fixed values of M, i.e., there will be one scatter point per value of M')
 
 arguments = parser.parse_args()
-# arguments.func(arguments)
-run(arguments)
+arguments.func(arguments)
+# run(arguments)
 

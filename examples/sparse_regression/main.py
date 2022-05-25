@@ -1,5 +1,7 @@
 from __future__ import print_function
 import numpy as np
+import pylab
+import statsmodels.api as sm
 import bayesiancoresets as bc
 from scipy.optimize import minimize
 from scipy.linalg import solve_triangular
@@ -19,7 +21,6 @@ import plotting
 import stein
 from model_gaussian import KL
 from bayesiancoresets.snnls import IHT
-
 
 def plot(arguments):
     # load the dataset of results that matches these input arguments
@@ -140,6 +141,33 @@ def run(arguments):
         else:
             return samples
 
+    if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+        t0 = time.perf_counter()
+        pi_hat_lap = laplace.LaplaceApprox(lambda th: model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
+                                     lambda th: model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0, :],
+                                     np.hstack((np.zeros(Z.shape[1]-1),(np.ones(Z.shape[1]-1)),1,1)),
+                                     bounds=param_bounds,
+                                     hess_log_joint=lambda th: model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0,
+                                                                                    b0)[0, :, :])
+        pi_hat_lap.build(1)
+        t_lap = time.perf_counter() - t0
+
+        mu_lap = pi_hat_lap.th
+        LSig_lap = pi_hat_lap.LSig
+    else:
+        mu_lap = np.zeros(X.shape[1])
+        LSig_lap = np.identity(X.shape[1])
+
+    def sample_w_lap(n, wts, pts, get_timing=False):
+        t0 = time.perf_counter()
+        samples = mu_lap + np.random.randn(n, 2*X.shape[1]+2).dot(LSig_lap.T)
+        t_total = time.perf_counter() - t0
+        t_per = t_total / n
+        if get_timing:
+            return samples, t_total, t_per
+        else:
+            return samples
+
     #######################################
     #######################################
     ###### Run MCMC on the full data ######
@@ -162,6 +190,12 @@ def run(arguments):
             os.mkdir('mcmc_cache')
         np.savez(mcmc_cache_filename, samples=full_samples, t=t_full_mcmc_per_itr, allow_pickle=True)
 
+    # Make qq plot
+    obs = full_samples[:, -3]
+    z = (obs - np.mean(obs)) / np.std(obs)
+    sm.qqplot(z, line='45')
+    pylab.show()
+
     #######################################
     #######################################
     ## Step 4: Construct Coreset
@@ -172,8 +206,11 @@ def run(arguments):
     # create coreset construction objects
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, model.log_likelihood,
                                      model.grad_log_likelihood)
+    lap_projector = bc.BlackBoxProjector(sample_w_lap, arguments.proj_dim, model.log_likelihood,
+                                     model.grad_log_likelihood)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
+    giga_lap = bc.HilbertCoreset(Z, lap_projector)
     sparsevi = bc.SparseVICoreset(Z, projector, opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs)
     lapl = laplace.LaplaceApprox(lambda th: model.log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0, b0)[0],
@@ -183,6 +220,7 @@ def run(arguments):
                                  hess_log_joint=lambda th: model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig0, a0,
                                                                                 b0)[0, :, :])
     iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
+    iht_lap = bc.HilbertCoreset(Z, lap_projector, snnls=IHT)
 
     algs = {'SVI': sparsevi,
             'QNC': newton,
@@ -190,6 +228,8 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT': iht,
+            'GIGA-LAP': giga_lap,
+            'IHT-LAP': iht_lap,
             'FULL': None,
             'NAIVE': None}
     alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
@@ -254,6 +294,8 @@ def run(arguments):
         t0 = time.perf_counter()
         alg.build(arguments.coreset_size)
         t_build = time.perf_counter() - t0
+        if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+            t_build += t_lap
         print('Sampling ' + log_suffix)
         wts, pts, idcs = alg.get()
         approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
@@ -291,9 +333,6 @@ def run(arguments):
     # imq_stein = stein.imq_stein(approx_samples, scores_approx,sigma=1)
 
     print('Saving ' + log_suffix)
-    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
-    #              rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-    #              gauss_stein=gauss_stein, imq_stein=imq_stein)
     results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_mcmc_per_itr,
                  rklw=rklw, fklw=fklw, mu_err=mu_err, cwise_mu_err=cwise_mu_err,
                  logsig_diag_err=logsig_diag_err, cwise_logsig_diag_err=cwise_logsig_diag_err,
@@ -322,13 +361,13 @@ plot_subparser.set_defaults(func=plot)
 parser.add_argument('--dataset', type=str, default="delays_medium",
                     help="The name of the dataset")  # examples: synth_lr, synth_lr_cauchy
 parser.add_argument('--alg', type=str, default='UNIF',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT','FULL','NAIVE'],
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP', 'IHT','FULL','NAIVE', 'GIGA-LAP', 'IHT-LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=1000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")
 parser.add_argument("--proj_dim", type=int, default=500,
                     help="The number of samples taken when discretizing log likelihoods")
-parser.add_argument('--coreset_size', type=int, default=100, help="The coreset size to evaluate")
+parser.add_argument('--coreset_size', type=int, default=1000, help="The coreset size to evaluate")
 parser.add_argument('--opt_itrs', type=str, default=100,
                     help="Number of optimization iterations (for SVI)")
 parser.add_argument('--newton_opt_itrs', type=str, default=20,

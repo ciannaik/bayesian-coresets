@@ -8,6 +8,7 @@ def nn_opt(x0, grd, nn_idcs=None, opt_itrs=1000, step_sched=lambda i : 1./(i+1),
   m1 = np.zeros(x.shape[0])
   m2 = np.zeros(x.shape[0])
   for i in range(opt_itrs):
+    print("Step {} out of {}".format(i,opt_itrs))
     g = grd(x)
     if verbose:
       active_idcs = np.intersect1d(nn_idcs, np.where(x==0)[0])

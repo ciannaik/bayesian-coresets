@@ -44,7 +44,7 @@ def run(arguments):
         print('Quitting.')
         quit()
 
-    np.random.seed(1)
+    np.random.seed(10)
     bc.util.set_verbosity(arguments.verbosity)
 
     #######################################
@@ -60,10 +60,10 @@ def run(arguments):
     data = np.load('../data/prices2018.npy')
     print('dataset size : ', data.shape)
 
-    # print('Subsampling down to '+str(arguments.data_num) + ' points')
-    # idcs = np.arange(data.shape[0])
-    # np.random.shuffle(idcs)
-    # data = data[idcs[:arguments.data_num], :]
+    print('Subsampling down to '+str(arguments.data_num) + ' points')
+    idcs = np.arange(data.shape[0])
+    np.random.shuffle(idcs)
+    data = data[idcs[:arguments.data_num], :]
 
 
 
@@ -157,21 +157,30 @@ def run(arguments):
         else:
             return samples
 
-    #def sample_w(n, wts, pts, get_timing=False):
-    #    # passing in X, Y into the stan sampler
-    #    # is equivalent to passing in pts, [1, ..., 1] (since Z = X*Y and pts is a subset of Z)
-    #    if pts.shape[0] > 0:
-    #        sampler_data = {'x': pts[:, :-1], 'y': pts[:, -1], 'w': wts,
-    #                        'd': X.shape[1], 'n': pts.shape[0], 'mu0': mu0, 'sig0': sig0, 'sig': sig}
-    #    else:
-    #        sampler_data = {'x': np.zeros((1, X.shape[1])), 'y': np.zeros(1), 'w': np.zeros(1),
-    #                        'd': X.shape[1], 'n': 1, 'mu0': mu0, 'sig0': sig0, 'sig': sig}
-    #    samples, t_mcmc, t_mcmc_per_itr = mcmc.sample(sampler_data, n, 'linear_regression',
-    #                                                        model.stan_code, arguments.trial)
-    #    if get_timing:
-    #        return samples['theta'].T, t_mcmc, t_mcmc_per_itr
-    #    else:
-    #        return samples['theta'].T
+    if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+        t0 = time.perf_counter()
+        pi_hat_lap = laplace.LaplaceApprox(lambda th : model.log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0],
+                        lambda th : model.grad_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0)[0,:],
+                                        np.zeros(X.shape[1]),
+                        hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0))
+        pi_hat_lap.build(1)
+        t_lap = time.perf_counter() - t0
+
+        mu_lap = pi_hat_lap.th
+        LSig_lap = pi_hat_lap.LSig
+    else:
+        mu_lap = np.zeros(Z.shape[1])
+        LSig_lap = np.identity(Z.shape[1])
+
+    def sample_w_lap(n, wts, pts, get_timing=False):
+        t0 = time.perf_counter()
+        samples = mu_lap + np.random.randn(n, X.shape[1]).dot(LSig_lap.T)
+        t_total = time.perf_counter() - t0
+        t_per = t_total / n
+        if get_timing:
+            return samples, t_total, t_per
+        else:
+            return samples
 
     #######################################
     #######################################
@@ -202,8 +211,10 @@ def run(arguments):
     print('Creating coreset construction objects ' + log_suffix)
     # create coreset construction objects
     projector = bc.BlackBoxProjector(sample_w, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
+    lap_projector = bc.BlackBoxProjector(sample_w_lap, arguments.proj_dim, lambda x, th : model.log_likelihood(x, th, sig), None)
     unif = bc.UniformSamplingCoreset(Z)
     giga = bc.HilbertCoreset(Z, projector)
+    giga_lap = bc.HilbertCoreset(Z, lap_projector)
     sparsevi = bc.SparseVICoreset(Z, projector, n_subsample_select=1000, n_subsample_opt=1000,
                                   opt_itrs=arguments.opt_itrs, step_sched=eval(arguments.step_sched))
     newton = bc.QuasiNewtonCoreset(Z, projector, opt_itrs=arguments.newton_opt_itrs,augment_sample=False)
@@ -212,6 +223,7 @@ def run(arguments):
                                     np.zeros(X.shape[1]),
 				    hess_log_joint = lambda th : model.hess_log_joint(Z, th, np.ones(Z.shape[0]), sig, mu0, sig0))
     iht = bc.HilbertCoreset(Z, projector, snnls=IHT)
+    iht_lap = bc.HilbertCoreset(Z, lap_projector, snnls=IHT)
 
     algs = {'SVI' : sparsevi,
             'QNC' : newton,
@@ -219,6 +231,8 @@ def run(arguments):
             'GIGA': giga,
             'UNIF': unif,
             'IHT' : iht,
+            'GIGA-LAP': giga_lap,
+            'IHT-LAP': iht_lap,
             'FULL': None,
             'NAIVE': None}
     alg = algs[arguments.alg] if arguments.alg not in ['FULL','NAIVE'] else None
@@ -282,6 +296,8 @@ def run(arguments):
         t0 = time.perf_counter()
         alg.build(arguments.coreset_size)
         t_build = time.perf_counter() - t0
+        if arguments.alg == 'GIGA-LAP' or arguments.alg == 'IHT-LAP':
+            t_build += t_lap
         print('Sampling ' + log_suffix)
         wts, pts, idcs = alg.get()
         approx_samples, t_approx_sampling, t_approx_per_sample = sample_w(arguments.samples_inference, wts, pts, get_timing=True)
@@ -327,15 +343,6 @@ def run(arguments):
     print('')
     print('')
 
-
-
-    # print('Saving ' + log_suffix)
-    # results.save(arguments, t_build=t_build, t_per_sample=t_approx_per_sample, t_full_per_sample=t_full_per_itr,
-    #              rklw=rklw, fklw=fklw, mu_err=mu_err, Sig_err=Sig_err, gauss_mmd=gauss_mmd, imq_mmd=imq_mmd,
-    #              gauss_stein=gauss_stein, imq_stein=imq_stein)
-    # print('')
-    # print('')
-
 ############################
 ############################
 ## Parse arguments
@@ -349,10 +356,10 @@ run_subparser.set_defaults(func=run)
 plot_subparser = subparsers.add_parser('plot', help='Plots the results')
 plot_subparser.set_defaults(func=plot)
 
-parser.add_argument('--data_num', type=int, default='1009686', help='Dataset subsample to use')
+parser.add_argument('--data_num', type=int, default='100000', help='Dataset subsample to use')
 parser.add_argument('--n_bases_per_scale', type=int, default=50, help="The number of Radial Basis Functions per scale")#TODO: verify help message
-parser.add_argument('--alg', type=str, default='UNIF',
-                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL','NAIVE'],
+parser.add_argument('--alg', type=str, default='GIGA-LAP',
+                    choices=['SVI', 'QNC', 'GIGA', 'UNIF', 'LAP','IHT','FULL','NAIVE', 'GIGA-LAP', 'IHT-LAP'],
                     help="The algorithm to use for solving sparse non-negative least squares")  # TODO: find way to make this help message autoupdate with new methods
 parser.add_argument("--samples_inference", type=int, default=10000,
                     help="number of MCMC samples to take for actual inference and comparison of posterior approximations (also take this many warmup steps before sampling)")

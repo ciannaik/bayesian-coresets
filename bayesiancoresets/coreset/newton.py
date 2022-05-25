@@ -123,7 +123,6 @@ class QuasiNewtonCoreset(Coreset):
             corevecs_cov = corevecs.dot(corevecs.T) / corevecs.shape[1]
             # add regularization term to hessian
             np.fill_diagonal(corevecs_cov, corevecs_cov.diagonal() + tau)
-            # print("Quasi-Hessian condition number: {}".format(np.linalg.cond(corevecs_cov)))
             grd = (corevecs.dot(resid) / corevecs.shape[1])
             print("gradient norm: {}".format(np.sqrt(((grd)**2).sum())))
             # output gradient of weights at idcs
